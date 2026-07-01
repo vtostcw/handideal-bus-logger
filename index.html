@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Bus Sensor Logger</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600&display=swap');
+
+  :root {
+    --bg: #0F1117;
+    --surface: #181B24;
+    --surface2: #1E2230;
+    --border: #2A2F42;
+    --text: #E8EAF0;
+    --muted: #6B7194;
+    --accent: #4F7FFF;
+    --green: #2DD4A0;
+    --red: #FF5C5C;
+
+    --btn-accel: #3B82F6;
+    --btn-brake: #EF4444;
+    --btn-turn:  #F59E0B;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'DM Sans', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  header {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: var(--surface);
+  }
+  .logo {
+    font-size: 15px; font-weight: 600; letter-spacing: .03em;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .logo-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--muted);
+    transition: background .3s;
+  }
+  .logo-dot.recording { background: var(--red); animation: pulse 1s infinite; }
+
+  @keyframes pulse {
+    0%,100% { opacity: 1; } 50% { opacity: .35; }
+  }
+
+  .status-badge {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; font-weight: 500;
+    padding: 4px 10px; border-radius: 20px;
+    background: var(--surface2); color: var(--muted);
+    border: 1px solid var(--border);
+    transition: all .3s;
+  }
+  .status-badge.active {
+    background: rgba(45,212,160,.12);
+    color: var(--green);
+    border-color: rgba(45,212,160,.3);
+  }
+
+  /* ── Main ── */
+  main {
+    flex: 1;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    max-width: 680px;
+    width: 100%;
+    margin: 0 auto;
+  }
+
+  /* ── Live metrics ── */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+  }
+  .metric-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+  }
+  .metric-label {
+    font-size: 10px; font-weight: 500; letter-spacing: .06em;
+    color: var(--muted); text-transform: uppercase; margin-bottom: 8px;
+  }
+  .metric-values {
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .metric-row {
+    font-family: 'DM Mono', monospace;
+    font-size: 12px; color: var(--text);
+    display: flex; justify-content: space-between;
+  }
+  .metric-axis { color: var(--muted); font-size: 10px; }
+
+  /* ── Controls ── */
+  .controls-section {}
+  .section-label {
+    font-size: 11px; font-weight: 500; letter-spacing: .06em;
+    color: var(--muted); text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .start-stop-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .btn {
+    border: none; cursor: pointer; font-family: inherit;
+    font-size: 14px; font-weight: 600;
+    border-radius: 10px; padding: 14px 10px;
+    transition: all .15s; position: relative; overflow: hidden;
+    -webkit-tap-highlight-color: transparent;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .btn:active { transform: scale(.96); }
+
+  .btn-start {
+    background: var(--green); color: #041F15;
+  }
+  .btn-stop {
+    background: var(--surface2); color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .btn-stop.danger { background: rgba(255,92,92,.12); color: var(--red); border-color: rgba(255,92,92,.3); }
+
+  .events-row {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  }
+
+  .btn-event {
+    padding: 18px 8px;
+    border-radius: 14px;
+    font-size: 13px;
+    flex-direction: column; gap: 6px;
+    border: 1.5px solid transparent;
+  }
+  .btn-event .evt-icon { font-size: 22px; line-height: 1; }
+  .btn-event .evt-count {
+    font-family: 'DM Mono', monospace;
+    font-size: 11px; opacity: .7;
+  }
+
+  .btn-accel  { background: rgba(59,130,246,.15); color: #93C5FD; border-color: rgba(59,130,246,.3); }
+  .btn-brake  { background: rgba(239,68,68,.15);  color: #FCA5A5; border-color: rgba(239,68,68,.3); }
+  .btn-turn   { background: rgba(245,158,11,.15); color: #FCD34D; border-color: rgba(245,158,11,.3); }
+
+  .btn-event:disabled { opacity: .35; cursor: not-allowed; }
+
+  /* Flash feedback on event */
+  .btn-event.flash { animation: flashBtn .25s ease; }
+  @keyframes flashBtn { 0%,100% { opacity:1; } 50% { opacity:.5; transform: scale(.93); } }
+
+  /* ── Counter strip ── */
+  .counter-strip {
+    display: flex; gap: 16px;
+    font-family: 'DM Mono', monospace; font-size: 12px;
+    color: var(--muted); padding: 0 2px;
+  }
+  .counter-strip span { display: flex; align-items: center; gap: 5px; }
+  .counter-strip b { color: var(--text); }
+
+  /* ── Download ── */
+  .download-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  }
+  .btn-dl {
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border);
+    font-size: 13px; padding: 12px;
+  }
+  .btn-dl:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-dl:disabled { opacity: .3; cursor: not-allowed; }
+
+  /* ── Tables ── */
+  .table-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+  }
+  .table-header {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .table-header h3 { font-size: 13px; font-weight: 600; }
+  .table-count {
+    font-family: 'DM Mono', monospace; font-size: 11px;
+    color: var(--muted);
+    background: var(--surface2); padding: 3px 8px; border-radius: 6px;
+  }
+  .table-wrap { overflow-x: auto; max-height: 240px; overflow-y: auto; }
+  table {
+    width: 100%; border-collapse: collapse;
+    font-family: 'DM Mono', monospace; font-size: 11px;
+  }
+  th {
+    position: sticky; top: 0; z-index: 1;
+    background: var(--surface2);
+    color: var(--muted); font-weight: 500;
+    padding: 8px 12px; text-align: right; white-space: nowrap;
+    border-bottom: 1px solid var(--border);
+  }
+  th:first-child { text-align: left; }
+  td {
+    padding: 7px 12px; text-align: right; color: var(--text);
+    border-bottom: 1px solid rgba(42,47,66,.6);
+    white-space: nowrap;
+  }
+  td:first-child { text-align: left; color: var(--muted); }
+  tr:last-child td { border-bottom: none; }
+
+  .tag-accel { color: #93C5FD; }
+  .tag-brake { color: #FCA5A5; }
+  .tag-turn  { color: #FCD34D; }
+
+  .empty-state {
+    padding: 28px; text-align: center;
+    font-size: 13px; color: var(--muted);
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-dot" id="recDot"></div>
+    Bus Sensor Logger
+  </div>
+  <div class="status-badge" id="statusBadge">En attente</div>
+</header>
+
+<main>
+
+  <!-- Live metrics -->
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-label">Accéléro (m/s²)</div>
+      <div class="metric-values">
+        <div class="metric-row"><span class="metric-axis">X</span><span id="lAccX">—</span></div>
+        <div class="metric-row"><span class="metric-axis">Y</span><span id="lAccY">—</span></div>
+        <div class="metric-row"><span class="metric-axis">Z</span><span id="lAccZ">—</span></div>
+      </div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Gyroscope (°/s)</div>
+      <div class="metric-values">
+        <div class="metric-row"><span class="metric-axis">X</span><span id="lGyrX">—</span></div>
+        <div class="metric-row"><span class="metric-axis">Y</span><span id="lGyrY">—</span></div>
+        <div class="metric-row"><span class="metric-axis">Z</span><span id="lGyrZ">—</span></div>
+      </div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">GPS</div>
+      <div class="metric-values">
+        <div class="metric-row"><span class="metric-axis">Lat</span><span id="lLat">—</span></div>
+        <div class="metric-row"><span class="metric-axis">Lon</span><span id="lLon">—</span></div>
+        <div class="metric-row"><span class="metric-axis">Alt</span><span id="lAlt">—</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Controls -->
+  <div class="controls-section">
+    <div class="section-label">Contrôles</div>
+
+    <div class="start-stop-row">
+      <button class="btn btn-start" id="btnStart" onclick="startRecording()">
+        ▶ Démarrer
+      </button>
+      <button class="btn btn-stop" id="btnStop" onclick="stopRecording()" disabled>
+        ■ Arrêter
+      </button>
+    </div>
+
+    <div class="section-label">Signalements</div>
+    <div class="events-row">
+      <button class="btn btn-event btn-accel" id="btnAccel" onclick="logEvent('Accélération')" disabled>
+        <span class="evt-icon">🚀</span>
+        Accélération
+        <span class="evt-count" id="cntAccel">0 signalement(s)</span>
+      </button>
+      <button class="btn btn-event btn-brake" id="btnBrake" onclick="logEvent('Freinage')" disabled>
+        <span class="evt-icon">🛑</span>
+        Freinage
+        <span class="evt-count" id="cntBrake">0 signalement(s)</span>
+      </button>
+      <button class="btn btn-event btn-turn" id="btnTurn" onclick="logEvent('Virage')" disabled>
+        <span class="evt-icon">↩️</span>
+        Virage
+        <span class="evt-count" id="cntTurn">0 signalement(s)</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Counters -->
+  <div class="counter-strip">
+    <span>Acquisitions : <b id="totalAcq">0</b></span>
+    <span>Signalements : <b id="totalEvt">0</b></span>
+  </div>
+
+  <!-- Download -->
+  <div class="download-row">
+    <button class="btn btn-dl" id="dlAcq" onclick="downloadCSV('acquisition')" disabled>
+      ⬇ Export acquisitions (.csv)
+    </button>
+    <button class="btn btn-dl" id="dlEvt" onclick="downloadCSV('events')" disabled>
+      ⬇ Export signalements (.csv)
+    </button>
+  </div>
+
+  <!-- Diagnostic -->
+  <div class="table-section">
+    <div class="table-header">
+      <h3>Diagnostic capteurs</h3>
+    </div>
+    <div id="diagLog" style="
+      font-family: 'DM Mono', monospace; font-size: 11px;
+      color: var(--muted); padding: 10px 14px;
+      max-height: 120px; overflow-y: auto; line-height: 1.8;
+    ">En attente du démarrage…</div>
+  </div>
+
+  <!-- Table acquisitions -->
+  <div class="table-section">
+    <div class="table-header">
+      <h3>Données d'acquisition</h3>
+      <span class="table-count" id="acqCount">0 ligne(s)</span>
+    </div>
+    <div class="table-wrap">
+      <div class="empty-state" id="emptyAcq">Démarrez l'acquisition pour voir les données</div>
+      <table id="tableAcq" style="display:none">
+        <thead>
+          <tr>
+            <th>Temps (s)</th>
+            <th>AccX</th><th>AccY</th><th>AccZ</th>
+            <th>GyrX</th><th>GyrY</th><th>GyrZ</th>
+            <th>Lat</th><th>Lon</th><th>Alt (m)</th>
+          </tr>
+        </thead>
+        <tbody id="bodyAcq"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Table events -->
+  <div class="table-section">
+    <div class="table-header">
+      <h3>Signalements</h3>
+      <span class="table-count" id="evtCount">0 signalement(s)</span>
+    </div>
+    <div class="table-wrap">
+      <div class="empty-state" id="emptyEvt">Aucun signalement enregistré</div>
+      <table id="tableEvt" style="display:none">
+        <thead>
+          <tr>
+            <th>Temps (s)</th>
+            <th>Type</th>
+            <th>AccX</th><th>AccY</th><th>AccZ</th>
+            <th>GyrX</th><th>GyrY</th><th>GyrZ</th>
+            <th>Lat</th><th>Lon</th><th>Alt (m)</th>
+          </tr>
+        </thead>
+        <tbody id="bodyEvt"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ── État global ────────────────────────────────────────────────────────────
+let isRecording  = false;
+let startTime    = null;
+let acqInterval  = null;
+let gpsWatchId   = null;
+
+// Objets capteurs (Generic Sensor API)
+let accSensor = null;
+let gyrSensor = null;
+
+// Valeurs courantes
+let lastAcc = { x: null, y: null, z: null };
+let lastGyr = { x: null, y: null, z: null };
+let lastGPS = { lat: null, lon: null, alt: null };
+
+// Drapeaux indiquant quelle API est active
+let usingGenericAcc = false;
+let usingGenericGyr = false;
+
+// Données
+let acquisitions = [];
+let events = [];
+let counts = { 'Accélération': 0, 'Freinage': 0, 'Virage': 0 };
+
+// ── Formatage ──────────────────────────────────────────────────────────────
+const fmt  = v => (v !== null && v !== undefined) ? Number(v).toFixed(4) : '—';
+const fmtV = v => (v !== null && v !== undefined) ? Number(v).toFixed(4) : null;
+
+// ── Diagnostic visible ─────────────────────────────────────────────────────
+function diag(msg) {
+  const el = document.getElementById('diagLog');
+  if (!el) return;
+  const line = document.createElement('div');
+  line.textContent = new Date().toLocaleTimeString('fr') + '  ' + msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── Démarrage des capteurs ─────────────────────────────────────────────────
+async function startSensors() {
+
+  // ── Accéléromètre ──────────────────────────────────────────────────────
+  // Priorité : Generic Sensor API (Android/Chrome fichier local compatible)
+  if (window.Accelerometer) {
+    try {
+      accSensor = new Accelerometer({ frequency: 20 });
+      accSensor.addEventListener('reading', () => {
+        lastAcc.x = accSensor.x;
+        lastAcc.y = accSensor.y;
+        lastAcc.z = accSensor.z;
+        updateLiveAcc();
+      });
+      accSensor.addEventListener('error', e => diag('Acc Generic erreur : ' + e.error.message));
+      accSensor.start();
+      usingGenericAcc = true;
+      diag('✅ Accéléromètre Generic Sensor actif');
+    } catch(e) {
+      diag('⚠️ Generic Acc échoué (' + e.message + '), essai DeviceMotion…');
+      attachDeviceMotion();
+    }
+  } else {
+    diag('ℹ️ Generic Sensor absent, essai DeviceMotion…');
+    attachDeviceMotion();
+  }
+
+  // ── Gyroscope ──────────────────────────────────────────────────────────
+  if (window.Gyroscope) {
+    try {
+      gyrSensor = new Gyroscope({ frequency: 20 });
+      gyrSensor.addEventListener('reading', () => {
+        // Gyroscope Generic = rad/s, on convertit en °/s pour cohérence
+        lastGyr.x = gyrSensor.x * (180 / Math.PI);
+        lastGyr.y = gyrSensor.y * (180 / Math.PI);
+        lastGyr.z = gyrSensor.z * (180 / Math.PI);
+        updateLiveGyr();
+      });
+      gyrSensor.addEventListener('error', e => diag('Gyr Generic erreur : ' + e.error.message));
+      gyrSensor.start();
+      usingGenericGyr = true;
+      diag('✅ Gyroscope Generic Sensor actif');
+    } catch(e) {
+      diag('⚠️ Generic Gyr échoué (' + e.message + '), rotation via DeviceMotion');
+    }
+  } else {
+    diag('ℹ️ Gyroscope Generic Sensor absent, rotation via DeviceMotion');
+  }
+
+  // DeviceMotion en fallback pour acc ET gyro si Generic non dispo
+  if (!usingGenericAcc || !usingGenericGyr) {
+    attachDeviceMotion();
+  }
+
+  // ── GPS ────────────────────────────────────────────────────────────────
+  if (navigator.geolocation) {
+    // Demande permission GPS (déclenche le popup Android)
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        lastGPS.lat = pos.coords.latitude;
+        lastGPS.lon = pos.coords.longitude;
+        lastGPS.alt = pos.coords.altitude;
+        updateLiveGPS();
+        diag('✅ GPS OK (' + pos.coords.latitude.toFixed(5) + ')');
+        // Lance le suivi continu
+        gpsWatchId = navigator.geolocation.watchPosition(
+          onGPS,
+          e => diag('GPS watch erreur : ' + e.message),
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+        );
+      },
+      e => diag('❌ GPS refusé ou erreur : ' + e.message),
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  } else {
+    diag('❌ Géolocalisation non disponible');
+  }
+}
+
+function attachDeviceMotion() {
+  const attach = () => {
+    window.addEventListener('devicemotion', onDeviceMotion, { passive: true });
+    diag('✅ DeviceMotion écouteur attaché');
+  };
+  // iOS nécessite une permission explicite
+  if (typeof DeviceMotionEvent !== 'undefined' &&
+      typeof DeviceMotionEvent.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission()
+      .then(r => {
+        if (r === 'granted') { attach(); }
+        else { diag('❌ Permission DeviceMotion refusée (iOS)'); }
+      })
+      .catch(e => diag('❌ DeviceMotion permission erreur : ' + e.message));
+  } else {
+    attach();
+  }
+}
+
+function onDeviceMotion(e) {
+  // N'écrase les valeurs que si Generic Sensor n'est pas actif
+  if (!usingGenericAcc) {
+    const a = e.accelerationIncludingGravity;
+    if (a && a.x !== null) {
+      lastAcc.x = a.x; lastAcc.y = a.y; lastAcc.z = a.z;
+      updateLiveAcc();
+    }
+  }
+  if (!usingGenericGyr) {
+    const r = e.rotationRate;
+    if (r && r.alpha !== null) {
+      lastGyr.x = r.alpha; lastGyr.y = r.beta; lastGyr.z = r.gamma;
+      updateLiveGyr();
+    }
+  }
+}
+
+function onGPS(pos) {
+  lastGPS.lat = pos.coords.latitude;
+  lastGPS.lon = pos.coords.longitude;
+  lastGPS.alt = pos.coords.altitude;
+  updateLiveGPS();
+}
+
+function stopSensors() {
+  window.removeEventListener('devicemotion', onDeviceMotion);
+  if (accSensor) { try { accSensor.stop(); } catch(_){} accSensor = null; }
+  if (gyrSensor) { try { gyrSensor.stop(); } catch(_){} gyrSensor = null; }
+  if (gpsWatchId !== null) {
+    navigator.geolocation.clearWatch(gpsWatchId);
+    gpsWatchId = null;
+  }
+  usingGenericAcc = false;
+  usingGenericGyr = false;
+}
+
+// ── Affichage live ─────────────────────────────────────────────────────────
+function updateLiveAcc() {
+  document.getElementById('lAccX').textContent = fmt(lastAcc.x);
+  document.getElementById('lAccY').textContent = fmt(lastAcc.y);
+  document.getElementById('lAccZ').textContent = fmt(lastAcc.z);
+}
+function updateLiveGyr() {
+  document.getElementById('lGyrX').textContent = fmt(lastGyr.x);
+  document.getElementById('lGyrY').textContent = fmt(lastGyr.y);
+  document.getElementById('lGyrZ').textContent = fmt(lastGyr.z);
+}
+function updateLiveGPS() {
+  document.getElementById('lLat').textContent = fmt(lastGPS.lat);
+  document.getElementById('lLon').textContent = fmt(lastGPS.lon);
+  document.getElementById('lAlt').textContent = fmt(lastGPS.alt);
+}
+
+// ── Enregistrement ─────────────────────────────────────────────────────────
+async function startRecording() {
+  // Reset
+  acquisitions = [];
+  events = [];
+  counts = { 'Accélération': 0, 'Freinage': 0, 'Virage': 0 };
+
+  document.getElementById('bodyAcq').innerHTML = '';
+  document.getElementById('bodyEvt').innerHTML = '';
+  document.getElementById('tableAcq').style.display = 'none';
+  document.getElementById('tableEvt').style.display = 'none';
+  document.getElementById('emptyAcq').style.display = '';
+  document.getElementById('emptyEvt').style.display = '';
+  document.getElementById('acqCount').textContent  = '0 ligne(s)';
+  document.getElementById('evtCount').textContent  = '0 signalement(s)';
+  document.getElementById('totalAcq').textContent  = '0';
+  document.getElementById('totalEvt').textContent  = '0';
+  document.getElementById('cntAccel').textContent  = '0 signalement(s)';
+  document.getElementById('cntBrake').textContent  = '0 signalement(s)';
+  document.getElementById('cntTurn').textContent   = '0 signalement(s)';
+  document.getElementById('dlAcq').disabled = true;
+  document.getElementById('dlEvt').disabled = true;
+  document.getElementById('diagLog').innerHTML = '';
+
+  diag('Démarrage des capteurs…');
+  await startSensors();
+
+  // Petit délai pour laisser les capteurs s'initialiser avant d'enregistrer
+  await new Promise(r => setTimeout(r, 600));
+
+  startTime   = performance.now();
+  isRecording = true;
+
+  // Boucle d'acquisition à 20 Hz via setInterval
+  // (les valeurs sont déjà mises à jour en temps réel par les listeners)
+  acqInterval = setInterval(() => {
+    if (!isRecording) return;
+    // N'enregistre que si on a au moins les données accéléromètre
+    if (lastAcc.x === null) return;
+
+    const t = ((performance.now() - startTime) / 1000).toFixed(3);
+    const row = {
+      t,
+      accX: fmtV(lastAcc.x), accY: fmtV(lastAcc.y), accZ: fmtV(lastAcc.z),
+      gyrX: fmtV(lastGyr.x), gyrY: fmtV(lastGyr.y), gyrZ: fmtV(lastGyr.z),
+      lat:  fmtV(lastGPS.lat), lon: fmtV(lastGPS.lon), alt: fmtV(lastGPS.alt)
+    };
+    acquisitions.push(row);
+    appendAcqRow(row);
+
+    const n = acquisitions.length;
+    document.getElementById('totalAcq').textContent = n;
+    document.getElementById('acqCount').textContent = n + ' ligne(s)';
+    if (n === 1) {
+      document.getElementById('tableAcq').style.display = '';
+      document.getElementById('emptyAcq').style.display = 'none';
+      diag('✅ Premier échantillon enregistré');
+    }
+  }, 50);
+
+  // UI
+  document.getElementById('btnStart').disabled = true;
+  document.getElementById('btnStop').disabled  = false;
+  document.getElementById('btnStop').classList.add('danger');
+  document.getElementById('btnAccel').disabled = false;
+  document.getElementById('btnBrake').disabled = false;
+  document.getElementById('btnTurn').disabled  = false;
+  document.getElementById('recDot').classList.add('recording');
+  document.getElementById('statusBadge').textContent = 'Enregistrement';
+  document.getElementById('statusBadge').classList.add('active');
+}
+
+function stopRecording() {
+  isRecording = false;
+  clearInterval(acqInterval);
+  stopSensors();
+  diag('⏹ Arrêt — ' + acquisitions.length + ' échantillons, ' + events.length + ' signalements');
+
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('btnStop').disabled  = true;
+  document.getElementById('btnStop').classList.remove('danger');
+  document.getElementById('btnAccel').disabled = true;
+  document.getElementById('btnBrake').disabled = true;
+  document.getElementById('btnTurn').disabled  = true;
+  document.getElementById('recDot').classList.remove('recording');
+  document.getElementById('statusBadge').textContent = 'Arrêté';
+  document.getElementById('statusBadge').classList.remove('active');
+  document.getElementById('dlAcq').disabled = acquisitions.length === 0;
+  document.getElementById('dlEvt').disabled = events.length === 0;
+}
+
+// ── Tables ─────────────────────────────────────────────────────────────────
+function appendAcqRow(row) {
+  const tbody = document.getElementById('bodyAcq');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td>${row.t}</td>
+    <td>${row.accX??'—'}</td><td>${row.accY??'—'}</td><td>${row.accZ??'—'}</td>
+    <td>${row.gyrX??'—'}</td><td>${row.gyrY??'—'}</td><td>${row.gyrZ??'—'}</td>
+    <td>${row.lat ??'—'}</td><td>${row.lon ??'—'}</td><td>${row.alt ??'—'}</td>`;
+  tbody.appendChild(tr);
+  const wrap = tbody.closest('.table-wrap');
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function logEvent(type) {
+  if (!isRecording) return;
+  const t = ((performance.now() - startTime) / 1000).toFixed(3);
+  const ev = {
+    t, type,
+    accX: fmtV(lastAcc.x), accY: fmtV(lastAcc.y), accZ: fmtV(lastAcc.z),
+    gyrX: fmtV(lastGyr.x), gyrY: fmtV(lastGyr.y), gyrZ: fmtV(lastGyr.z),
+    lat:  fmtV(lastGPS.lat), lon: fmtV(lastGPS.lon), alt: fmtV(lastGPS.alt)
+  };
+  events.push(ev);
+  counts[type]++;
+
+  appendEvtRow(ev);
+  document.getElementById('totalEvt').textContent = events.length;
+  document.getElementById('evtCount').textContent = events.length + ' signalement(s)';
+
+  const idMap  = { 'Accélération':'cntAccel', 'Freinage':'cntBrake', 'Virage':'cntTurn' };
+  const btnMap = { 'Accélération':'btnAccel', 'Freinage':'btnBrake', 'Virage':'btnTurn' };
+  document.getElementById(idMap[type]).textContent = counts[type] + ' signalement(s)';
+
+  if (events.length === 1) {
+    document.getElementById('tableEvt').style.display = '';
+    document.getElementById('emptyEvt').style.display = 'none';
+  }
+  const btn = document.getElementById(btnMap[type]);
+  btn.classList.add('flash');
+  setTimeout(() => btn.classList.remove('flash'), 300);
+  diag('📍 ' + type + ' à t=' + t + 's');
+}
+
+function appendEvtRow(ev) {
+  const tbody = document.getElementById('bodyEvt');
+  const cls = { 'Accélération':'tag-accel', 'Freinage':'tag-brake', 'Virage':'tag-turn' };
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td>${ev.t}</td>
+    <td class="${cls[ev.type]}">${ev.type}</td>
+    <td>${ev.accX??'—'}</td><td>${ev.accY??'—'}</td><td>${ev.accZ??'—'}</td>
+    <td>${ev.gyrX??'—'}</td><td>${ev.gyrY??'—'}</td><td>${ev.gyrZ??'—'}</td>
+    <td>${ev.lat ??'—'}</td><td>${ev.lon ??'—'}</td><td>${ev.alt ??'—'}</td>`;
+  tbody.appendChild(tr);
+  const wrap = tbody.closest('.table-wrap');
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+// ── Export CSV ────────────────────────────────────────────────────────────
+function toCSV(headers, rows) {
+  const esc = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    return s.includes(',') || s.includes('"') ? `"${s.replace(/"/g,'""')}"` : s;
+  };
+  return [headers.join(','), ...rows.map(r => r.map(esc).join(','))].join('\r\n');
+}
+
+function downloadCSV(type) {
+  let csv, filename;
+  if (type === 'acquisition') {
+    csv = toCSV(
+      ['Temps_s','AccX_ms2','AccY_ms2','AccZ_ms2','GyrX_degs','GyrY_degs','GyrZ_degs','Lat','Lon','Alt_m'],
+      acquisitions.map(r => [r.t,r.accX,r.accY,r.accZ,r.gyrX,r.gyrY,r.gyrZ,r.lat,r.lon,r.alt])
+    );
+    filename = 'acquisitions_' + ts() + '.csv';
+  } else {
+    csv = toCSV(
+      ['Temps_s','Type','AccX_ms2','AccY_ms2','AccZ_ms2','GyrX_degs','GyrY_degs','GyrZ_degs','Lat','Lon','Alt_m'],
+      events.map(r => [r.t,r.type,r.accX,r.accY,r.accZ,r.gyrX,r.gyrY,r.gyrZ,r.lat,r.lon,r.alt])
+    );
+    filename = 'signalements_' + ts() + '.csv';
+  }
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), { href: url, download: filename });
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function ts() {
+  const d = new Date();
+  return d.getFullYear() +
+    String(d.getMonth()+1).padStart(2,'0') +
+    String(d.getDate()).padStart(2,'0') + '_' +
+    String(d.getHours()).padStart(2,'0') +
+    String(d.getMinutes()).padStart(2,'0');
+}
+</script>
+</body>
+</html>
