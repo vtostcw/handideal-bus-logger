@@ -333,6 +333,49 @@
     </button>
   </div>
 
+  <!-- Envoi par email -->
+  <div class="table-section" style="padding: 16px;">
+    <div class="table-header" style="margin-bottom: 12px;">
+      <h3>Envoyer les données par email</h3>
+    </div>
+    <div style="padding: 0 0 12px 0;">
+      <label style="font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; display:block; margin-bottom:6px;">
+        Adresse email destinataire
+      </label>
+      <input
+        type="email"
+        id="emailDest"
+        placeholder="exemple@email.com"
+        style="
+          width:100%; padding:11px 14px;
+          background:var(--surface2); border:1px solid var(--border);
+          border-radius:8px; color:var(--text);
+          font-family:inherit; font-size:14px;
+          outline:none; transition: border-color .2s;
+        "
+        onfocus="this.style.borderColor='var(--accent)'"
+        onblur="this.style.borderColor='var(--border)'"
+      />
+      <div id="emailWarning" style="
+        display:none; margin-top:6px;
+        font-size:11px; color:var(--red);
+      ">⚠ Veuillez saisir une adresse email valide.</div>
+    </div>
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+      <button class="btn btn-dl" id="mailAcq" onclick="sendEmail('acquisition')" disabled
+        style="border-color:rgba(79,127,255,.4); color:var(--accent);">
+        ✉ Envoyer acquisitions
+      </button>
+      <button class="btn btn-dl" id="mailEvt" onclick="sendEmail('events')" disabled
+        style="border-color:rgba(79,127,255,.4); color:var(--accent);">
+        ✉ Envoyer signalements
+      </button>
+    </div>
+    <div style="margin-top:10px; font-size:11px; color:var(--muted); line-height:1.6;">
+      ℹ Les données seront collées dans le corps de l'email. Accepte l'ouverture de ton application mail quand elle apparaît.
+    </div>
+  </div>
+
   <!-- Diagnostic -->
   <div class="table-section">
     <div class="table-header">
@@ -603,8 +646,10 @@ async function startRecording() {
   document.getElementById('cntAccel').textContent  = '0 signalement(s)';
   document.getElementById('cntBrake').textContent  = '0 signalement(s)';
   document.getElementById('cntTurn').textContent   = '0 signalement(s)';
-  document.getElementById('dlAcq').disabled = true;
-  document.getElementById('dlEvt').disabled = true;
+  document.getElementById('dlAcq').disabled   = true;
+  document.getElementById('dlEvt').disabled   = true;
+  document.getElementById('mailAcq').disabled = true;
+  document.getElementById('mailEvt').disabled = true;
   document.getElementById('diagLog').innerHTML = '';
 
   diag('Démarrage des capteurs…');
@@ -670,8 +715,10 @@ function stopRecording() {
   document.getElementById('recDot').classList.remove('recording');
   document.getElementById('statusBadge').textContent = 'Arrêté';
   document.getElementById('statusBadge').classList.remove('active');
-  document.getElementById('dlAcq').disabled = acquisitions.length === 0;
-  document.getElementById('dlEvt').disabled = events.length === 0;
+  document.getElementById('dlAcq').disabled   = acquisitions.length === 0;
+  document.getElementById('dlEvt').disabled   = events.length === 0;
+  document.getElementById('mailAcq').disabled = acquisitions.length === 0;
+  document.getElementById('mailEvt').disabled = events.length === 0;
 }
 
 // ── Tables ─────────────────────────────────────────────────────────────────
@@ -772,6 +819,70 @@ function ts() {
     String(d.getDate()).padStart(2,'0') + '_' +
     String(d.getHours()).padStart(2,'0') +
     String(d.getMinutes()).padStart(2,'0');
+}
+
+// ── Envoi par email (mailto) ───────────────────────────────────────────────
+function sendEmail(type) {
+  // Validation adresse
+  const emailInput = document.getElementById('emailDest');
+  const warning    = document.getElementById('emailWarning');
+  const dest       = emailInput.value.trim();
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  if (!emailRegex.test(dest)) {
+    warning.style.display = 'block';
+    emailInput.style.borderColor = 'var(--red)';
+    return;
+  }
+  warning.style.display = 'none';
+  emailInput.style.borderColor = 'var(--border)';
+
+  // Construction du CSV
+  let subject, csv;
+  if (type === 'acquisition') {
+    subject = 'Bus Logger – Acquisitions ' + ts();
+    csv = toCSV(
+      ['Temps_s','AccX_ms2','AccY_ms2','AccZ_ms2','GyrX_degs','GyrY_degs','GyrZ_degs','Lat','Lon','Alt_m'],
+      acquisitions.map(r => [r.t,r.accX,r.accY,r.accZ,r.gyrX,r.gyrY,r.gyrZ,r.lat,r.lon,r.alt])
+    );
+  } else {
+    subject = 'Bus Logger – Signalements ' + ts();
+    csv = toCSV(
+      ['Temps_s','Type','AccX_ms2','AccY_ms2','AccZ_ms2','GyrX_degs','GyrY_degs','GyrZ_degs','Lat','Lon','Alt_m'],
+      events.map(r => [r.t,r.type,r.accX,r.accY,r.accZ,r.gyrX,r.gyrY,r.gyrZ,r.lat,r.lon,r.alt])
+    );
+  }
+
+  // Corps du mail : info + données CSV
+  const body = [
+    'Bus Sensor Logger – export du ' + new Date().toLocaleString('fr-FR'),
+    'Nombre de lignes : ' + (type === 'acquisition' ? acquisitions.length : events.length),
+    '',
+    '-- DONNÉES CSV --',
+    csv
+  ].join('\n');
+
+  // mailto limité à ~2000 caractères sur certains clients mail mobiles
+  // On tronque proprement si nécessaire et on prévient
+  const MAX = 1800;
+  const bodyEnc = encodeURIComponent(body);
+  let finalBody = bodyEnc;
+  let truncated = false;
+  if (bodyEnc.length > MAX * 3) {
+    // Tronquer le CSV brut puis ré-encoder
+    const truncBody = body.substring(0, MAX) + '\n\n[... données tronquées – téléchargez le CSV complet depuis l\'app]';
+    finalBody = encodeURIComponent(truncBody);
+    truncated = true;
+  }
+
+  const mailto = `mailto:${encodeURIComponent(dest)}?subject=${encodeURIComponent(subject)}&body=${finalBody}`;
+  window.location.href = mailto;
+
+  if (truncated) {
+    setTimeout(() => {
+      alert('⚠ Les données sont volumineuses et ont été tronquées dans l\'email.\nUtilise le bouton "Export CSV" pour télécharger le fichier complet.');
+    }, 800);
+  }
 }
 </script>
 </body>
