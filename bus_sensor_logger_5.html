@@ -1,0 +1,572 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Bus Sensor Logger</title>
+<style>
+  :root {
+    --bg:      #ffffff;
+    --surface: #f5f5f5;
+    --surface2:#ebebeb;
+    --border:  #d0d0d0;
+    --text:    #111111;
+    --muted:   #666666;
+    --accent:  #1a56db;
+    --ok:      #1a7f4b;
+    --danger:  #c0392b;
+    --c-accel: #1a56db;
+    --c-brake: #c0392b;
+    --c-turn:  #b45309;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:      #0f0f0f;
+      --surface: #1a1a1a;
+      --surface2:#242424;
+      --border:  #333333;
+      --text:    #f0f0f0;
+      --muted:   #888888;
+      --accent:  #4d8cf5;
+      --ok:      #34d27a;
+      --danger:  #e05c4b;
+      --c-accel: #4d8cf5;
+      --c-brake: #e05c4b;
+      --c-turn:  #f59e0b;
+    }
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; display: flex; flex-direction: column; font-size: 15px; line-height: 1.5; }
+  header { padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-size: 15px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+  .rec-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); flex-shrink: 0; transition: background .3s; }
+  .rec-dot.on { background: var(--danger); animation: blink 1.1s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+  .badge { font-size: 12px; padding: 3px 10px; border-radius: 20px; border: 1px solid var(--border); background: var(--surface2); color: var(--muted); transition: all .25s; }
+  .badge.on { background: transparent; border-color: var(--ok); color: var(--ok); font-weight: 500; }
+  main { flex: 1; padding: 20px; display: flex; flex-direction: column; gap: 18px; max-width: 680px; width: 100%; margin: 0 auto; }
+  .metrics-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .metric-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 13px; }
+  .metric-label { font-size: 10px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  .metric-row { display: flex; justify-content: space-between; font-size: 12px; font-family: ui-monospace, monospace; color: var(--text); margin-bottom: 2px; }
+  .metric-axis { color: var(--muted); }
+  .section-label { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin-bottom: 10px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .btn { border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: inherit; font-size: 14px; font-weight: 500; padding: 13px 10px; border-radius: 10px; cursor: pointer; transition: opacity .15s, border-color .15s; display: flex; align-items: center; justify-content: center; gap: 7px; -webkit-tap-highlight-color: transparent; user-select: none; }
+  .btn:active:not(:disabled) { opacity: .7; }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+  .btn-start { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 600; }
+  .btn-stop.on { border-color: var(--danger); color: var(--danger); }
+  .btn-send { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; width: 100%; font-size: 15px; padding: 15px; border-radius: 10px; }
+  .btn-event { flex-direction: column; gap: 5px; padding: 18px 8px; border-radius: 12px; }
+  .btn-event .evt-label { font-size: 13px; font-weight: 600; }
+  .btn-event .evt-count { font-size: 11px; font-family: ui-monospace, monospace; color: var(--muted); }
+  .btn-accel { border-color: var(--c-accel); color: var(--c-accel); }
+  .btn-brake  { border-color: var(--c-brake);  color: var(--c-brake); }
+  .btn-turn   { border-color: var(--c-turn);   color: var(--c-turn); }
+  .flash { animation: flashAnim .22s ease; }
+  @keyframes flashAnim { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .counter-strip { display: flex; gap: 18px; font-size: 12px; font-family: ui-monospace, monospace; color: var(--muted); }
+  .counter-strip b { color: var(--text); }
+  .btn-sm { font-size: 13px; padding: 11px 10px; border-radius: 8px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .panel-header { padding: 11px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .panel-header h3 { font-size: 13px; font-weight: 600; }
+  .panel-count { font-size: 11px; font-family: ui-monospace, monospace; color: var(--muted); background: var(--surface2); padding: 2px 8px; border-radius: 5px; }
+  .table-wrap { overflow-x: auto; max-height: 220px; overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 11px; font-family: ui-monospace, monospace; }
+  th { position: sticky; top: 0; z-index: 1; background: var(--surface2); color: var(--muted); font-weight: 500; padding: 7px 11px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
+  th:first-child { text-align: left; }
+  td { padding: 6px 11px; text-align: right; color: var(--text); border-bottom: 1px solid var(--border); white-space: nowrap; }
+  td:first-child { text-align: left; color: var(--muted); }
+  tr:last-child td { border-bottom: none; }
+  .c-accel { color: var(--c-accel); font-weight: 600; }
+  .c-brake  { color: var(--c-brake); font-weight: 600; }
+  .c-turn   { color: var(--c-turn);  font-weight: 600; }
+  .empty { padding: 28px 16px; text-align: center; font-size: 13px; color: var(--muted); }
+  .diag-log { font-family: ui-monospace, monospace; font-size: 11px; color: var(--muted); padding: 10px 14px; max-height: 110px; overflow-y: auto; line-height: 1.8; }
+  .send-status { font-size: 13px; margin-top: 10px; padding: 10px 14px; border-radius: 8px; display: none; font-family: ui-monospace, monospace; text-align: center; }
+  .send-status.ok      { border: 1px solid var(--ok);     color: var(--ok); }
+  .send-status.err     { border: 1px solid var(--danger);  color: var(--danger); }
+  .send-status.loading { border: 1px solid var(--border);  color: var(--muted); }
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="rec-dot" id="recDot"></div>
+    Bus Sensor Logger
+  </div>
+  <div class="badge" id="statusBadge">En attente</div>
+</header>
+
+<main>
+
+  <!-- Métriques live -->
+  <div class="metrics-grid">
+    <div class="metric-card">
+      <div class="metric-label">Accélération</div>
+      <div class="metric-row"><span class="metric-axis">X</span><span id="lAccX">—</span></div>
+      <div class="metric-row"><span class="metric-axis">Y</span><span id="lAccY">—</span></div>
+      <div class="metric-row"><span class="metric-axis">Z</span><span id="lAccZ">—</span></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">Gyroscope</div>
+      <div class="metric-row"><span class="metric-axis">X</span><span id="lGyrX">—</span></div>
+      <div class="metric-row"><span class="metric-axis">Y</span><span id="lGyrY">—</span></div>
+      <div class="metric-row"><span class="metric-axis">Z</span><span id="lGyrZ">—</span></div>
+    </div>
+    <div class="metric-card">
+      <div class="metric-label">GPS</div>
+      <div class="metric-row"><span class="metric-axis">Lat</span><span id="lLat">—</span></div>
+      <div class="metric-row"><span class="metric-axis">Lon</span><span id="lLon">—</span></div>
+      <div class="metric-row"><span class="metric-axis">Alt</span><span id="lAlt">—</span></div>
+    </div>
+  </div>
+
+  <!-- Contrôles -->
+  <div>
+    <div class="section-label">Enregistrement</div>
+    <div class="row2">
+      <button class="btn btn-start" id="btnStart" onclick="startRecording()">Démarrer</button>
+      <button class="btn btn-stop" id="btnStop" onclick="stopRecording()" disabled>Arrêter</button>
+    </div>
+  </div>
+
+  <!-- Signalements -->
+  <div>
+    <div class="section-label">Signalements</div>
+    <div class="row3">
+      <button class="btn btn-event btn-accel" id="btnAccel" onclick="logEvent('Accélération')" disabled>
+        <span class="evt-label">Accélération</span>
+        <span class="evt-count" id="cntAccel">0</span>
+      </button>
+      <button class="btn btn-event btn-brake" id="btnBrake" onclick="logEvent('Freinage')" disabled>
+        <span class="evt-label">Freinage</span>
+        <span class="evt-count" id="cntBrake">0</span>
+      </button>
+      <button class="btn btn-event btn-turn" id="btnTurn" onclick="logEvent('Virage')" disabled>
+        <span class="evt-label">Virage</span>
+        <span class="evt-count" id="cntTurn">0</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Compteurs -->
+  <div class="counter-strip">
+    <span>Acquisitions : <b id="totalAcq">0</b></span>
+    <span>Signalements : <b id="totalEvt">0</b></span>
+  </div>
+
+  <!-- Export CSV local -->
+  <div>
+    <div class="section-label">Export local</div>
+    <div class="row2">
+      <button class="btn btn-sm" id="dlAcq" onclick="downloadCSV('acquisition')" disabled>Télécharger acquisitions</button>
+      <button class="btn btn-sm" id="dlEvt" onclick="downloadCSV('events')" disabled>Télécharger signalements</button>
+    </div>
+  </div>
+
+  <!-- Envoi Supabase -->
+  <div>
+    <button class="btn btn-send" id="btnSend" onclick="sendResults()" disabled>Envoyer les résultats</button>
+    <div class="send-status" id="sendStatus"></div>
+  </div>
+
+  <!-- Diagnostic -->
+  <div class="panel">
+    <div class="panel-header"><h3>Diagnostic capteurs</h3></div>
+    <div class="diag-log" id="diagLog">En attente du démarrage…</div>
+  </div>
+
+  <!-- Table acquisitions -->
+  <div class="panel">
+    <div class="panel-header">
+      <h3>Données d'acquisition</h3>
+      <span class="panel-count" id="acqCount">0</span>
+    </div>
+    <div id="emptyAcq" class="empty">Démarrez l'acquisition pour voir les données</div>
+    <div class="table-wrap" style="display:none" id="wrapAcq">
+      <table>
+        <thead><tr>
+          <th>Temps (s)</th>
+          <th>AccX</th><th>AccY</th><th>AccZ</th>
+          <th>GyrX</th><th>GyrY</th><th>GyrZ</th>
+          <th>Lat</th><th>Lon</th><th>Alt (m)</th>
+        </tr></thead>
+        <tbody id="bodyAcq"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Table signalements -->
+  <div class="panel">
+    <div class="panel-header">
+      <h3>Signalements</h3>
+      <span class="panel-count" id="evtCount">0</span>
+    </div>
+    <div id="emptyEvt" class="empty">Aucun signalement enregistré</div>
+    <div class="table-wrap" style="display:none" id="wrapEvt">
+      <table>
+        <thead><tr>
+          <th>Temps (s)</th><th>Type</th>
+          <th>AccX</th><th>AccY</th><th>AccZ</th>
+          <th>GyrX</th><th>GyrY</th><th>GyrZ</th>
+          <th>Lat</th><th>Lon</th><th>Alt (m)</th>
+        </tr></thead>
+        <tbody id="bodyEvt"></tbody>
+      </table>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// ── Config Supabase ───────────────────────────────────────────────────────────
+const SUPA_URL    = 'https://psmunhhgwpwcsnjixnqn.supabase.co';
+const SUPA_ANON   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzbXVuaGhnd3B3Y3Nuaml4bnFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxNjcwMDgsImV4cCI6MjEwMzc0MzAwOH0.wPJW03N5_WRfOA_vzitzqPYGIlJalDFZUAnjvmMdL-Q';
+const BUCKET      = 'bus-results';
+
+// ── État capteurs ─────────────────────────────────────────────────────────────
+let isRecording = false, startTime = null, acqInterval = null, gpsWatchId = null;
+let accSensor = null, gyrSensor = null, usingGenAcc = false, usingGenGyr = false;
+let lastAcc = { x:null, y:null, z:null };
+let lastGyr = { x:null, y:null, z:null };
+let lastGPS = { lat:null, lon:null, alt:null };
+let acquisitions = [], events = [];
+let counts = { 'Accélération':0, 'Freinage':0, 'Virage':0 };
+
+// ── Formatage ─────────────────────────────────────────────────────────────────
+const fmt  = v => (v !== null && v !== undefined) ? Number(v).toFixed(4) : '—';
+const fmtV = v => (v !== null && v !== undefined) ? Number(v).toFixed(4) : null;
+
+// ── Diagnostic ────────────────────────────────────────────────────────────────
+function diag(msg) {
+  const el = document.getElementById('diagLog');
+  const line = document.createElement('div');
+  line.textContent = new Date().toLocaleTimeString('fr') + '  ' + msg;
+  el.appendChild(line);
+  el.scrollTop = el.scrollHeight;
+}
+
+// ── Capteurs ──────────────────────────────────────────────────────────────────
+async function startSensors() {
+  if (window.Accelerometer) {
+    try {
+      accSensor = new Accelerometer({ frequency: 20 });
+      accSensor.addEventListener('reading', () => {
+        lastAcc.x = accSensor.x; lastAcc.y = accSensor.y; lastAcc.z = accSensor.z;
+        updateLiveAcc();
+      });
+      accSensor.addEventListener('error', e => diag('Acc erreur : ' + e.error.message));
+      accSensor.start(); usingGenAcc = true;
+      diag('Accelerometre Generic Sensor actif');
+    } catch(e) { diag('Generic Acc echoue, bascule DeviceMotion'); attachDeviceMotion(); }
+  } else { diag('Generic Sensor absent, bascule DeviceMotion'); attachDeviceMotion(); }
+
+  if (window.Gyroscope) {
+    try {
+      gyrSensor = new Gyroscope({ frequency: 20 });
+      gyrSensor.addEventListener('reading', () => {
+        lastGyr.x = gyrSensor.x * (180/Math.PI);
+        lastGyr.y = gyrSensor.y * (180/Math.PI);
+        lastGyr.z = gyrSensor.z * (180/Math.PI);
+        updateLiveGyr();
+      });
+      gyrSensor.addEventListener('error', e => diag('Gyr erreur : ' + e.error.message));
+      gyrSensor.start(); usingGenGyr = true;
+      diag('Gyroscope Generic Sensor actif');
+    } catch(e) { diag('Generic Gyr echoue'); }
+  }
+
+  if (!usingGenAcc || !usingGenGyr) attachDeviceMotion();
+
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        lastGPS.lat = pos.coords.latitude;
+        lastGPS.lon = pos.coords.longitude;
+        lastGPS.alt = pos.coords.altitude;
+        updateLiveGPS();
+        diag('GPS OK (' + pos.coords.latitude.toFixed(5) + ')');
+        gpsWatchId = navigator.geolocation.watchPosition(
+          onGPS,
+          e => diag('GPS erreur : ' + e.message),
+          { enableHighAccuracy: true, maximumAge: 0, timeout: 15000 }
+        );
+      },
+      e => diag('GPS refuse : ' + e.message),
+      { enableHighAccuracy: true, timeout: 15000 }
+    );
+  } else { diag('Geolocalisation non disponible'); }
+}
+
+function attachDeviceMotion() {
+  const attach = () => {
+    window.addEventListener('devicemotion', onDeviceMotion, { passive: true });
+    diag('DeviceMotion actif');
+  };
+  if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+    DeviceMotionEvent.requestPermission()
+      .then(r => { if (r === 'granted') attach(); else diag('Permission DeviceMotion refusee'); })
+      .catch(e => diag('DeviceMotion erreur : ' + e.message));
+  } else { attach(); }
+}
+
+function onDeviceMotion(e) {
+  if (!usingGenAcc) { const a = e.accelerationIncludingGravity; if (a && a.x !== null) { lastAcc.x=a.x; lastAcc.y=a.y; lastAcc.z=a.z; updateLiveAcc(); } }
+  if (!usingGenGyr) { const r = e.rotationRate; if (r && r.alpha !== null) { lastGyr.x=r.alpha; lastGyr.y=r.beta; lastGyr.z=r.gamma; updateLiveGyr(); } }
+}
+
+function onGPS(pos) {
+  lastGPS.lat = pos.coords.latitude;
+  lastGPS.lon = pos.coords.longitude;
+  lastGPS.alt = pos.coords.altitude;
+  updateLiveGPS();
+}
+
+function stopSensors() {
+  window.removeEventListener('devicemotion', onDeviceMotion);
+  if (accSensor) { try { accSensor.stop(); } catch(_){} accSensor = null; }
+  if (gyrSensor) { try { gyrSensor.stop(); } catch(_){} gyrSensor = null; }
+  if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
+  usingGenAcc = false; usingGenGyr = false;
+}
+
+// ── Affichage live ────────────────────────────────────────────────────────────
+function updateLiveAcc() {
+  document.getElementById('lAccX').textContent = fmt(lastAcc.x);
+  document.getElementById('lAccY').textContent = fmt(lastAcc.y);
+  document.getElementById('lAccZ').textContent = fmt(lastAcc.z);
+}
+function updateLiveGyr() {
+  document.getElementById('lGyrX').textContent = fmt(lastGyr.x);
+  document.getElementById('lGyrY').textContent = fmt(lastGyr.y);
+  document.getElementById('lGyrZ').textContent = fmt(lastGyr.z);
+}
+function updateLiveGPS() {
+  document.getElementById('lLat').textContent = fmt(lastGPS.lat);
+  document.getElementById('lLon').textContent = fmt(lastGPS.lon);
+  document.getElementById('lAlt').textContent = fmt(lastGPS.alt);
+}
+
+// ── Enregistrement ────────────────────────────────────────────────────────────
+async function startRecording() {
+  acquisitions = []; events = [];
+  counts = { 'Accélération':0, 'Freinage':0, 'Virage':0 };
+  document.getElementById('bodyAcq').innerHTML = '';
+  document.getElementById('bodyEvt').innerHTML = '';
+  document.getElementById('wrapAcq').style.display = 'none';
+  document.getElementById('wrapEvt').style.display = 'none';
+  document.getElementById('emptyAcq').style.display = '';
+  document.getElementById('emptyEvt').style.display = '';
+  document.getElementById('acqCount').textContent = '0';
+  document.getElementById('evtCount').textContent = '0';
+  document.getElementById('totalAcq').textContent = '0';
+  document.getElementById('totalEvt').textContent = '0';
+  document.getElementById('cntAccel').textContent = '0';
+  document.getElementById('cntBrake').textContent = '0';
+  document.getElementById('cntTurn').textContent  = '0';
+  document.getElementById('dlAcq').disabled  = true;
+  document.getElementById('dlEvt').disabled  = true;
+  document.getElementById('btnSend').disabled = true;
+  document.getElementById('sendStatus').style.display = 'none';
+  document.getElementById('diagLog').innerHTML = '';
+
+  diag('Demarrage des capteurs...');
+  await startSensors();
+  await new Promise(r => setTimeout(r, 600));
+
+  startTime = performance.now();
+  isRecording = true;
+
+  acqInterval = setInterval(() => {
+    if (!isRecording || lastAcc.x === null) return;
+    const t = ((performance.now() - startTime) / 1000).toFixed(3);
+    const row = {
+      t,
+      accX: fmtV(lastAcc.x), accY: fmtV(lastAcc.y), accZ: fmtV(lastAcc.z),
+      gyrX: fmtV(lastGyr.x), gyrY: fmtV(lastGyr.y), gyrZ: fmtV(lastGyr.z),
+      lat:  fmtV(lastGPS.lat), lon: fmtV(lastGPS.lon), alt: fmtV(lastGPS.alt)
+    };
+    acquisitions.push(row);
+    appendAcqRow(row);
+    const n = acquisitions.length;
+    document.getElementById('totalAcq').textContent = n;
+    document.getElementById('acqCount').textContent = n;
+    if (n === 1) {
+      document.getElementById('wrapAcq').style.display = '';
+      document.getElementById('emptyAcq').style.display = 'none';
+      diag('Premier echantillon enregistre');
+    }
+  }, 50);
+
+  document.getElementById('btnStart').disabled = true;
+  document.getElementById('btnStop').disabled  = false;
+  document.getElementById('btnStop').classList.add('on');
+  document.getElementById('btnAccel').disabled = false;
+  document.getElementById('btnBrake').disabled = false;
+  document.getElementById('btnTurn').disabled  = false;
+  document.getElementById('recDot').classList.add('on');
+  document.getElementById('statusBadge').textContent = 'Enregistrement';
+  document.getElementById('statusBadge').classList.add('on');
+}
+
+function stopRecording() {
+  isRecording = false;
+  clearInterval(acqInterval);
+  stopSensors();
+  diag('Arret — ' + acquisitions.length + ' echantillons, ' + events.length + ' signalements');
+  document.getElementById('btnStart').disabled = false;
+  document.getElementById('btnStop').disabled  = true;
+  document.getElementById('btnStop').classList.remove('on');
+  document.getElementById('btnAccel').disabled = true;
+  document.getElementById('btnBrake').disabled = true;
+  document.getElementById('btnTurn').disabled  = true;
+  document.getElementById('recDot').classList.remove('on');
+  document.getElementById('statusBadge').textContent = 'Arrete';
+  document.getElementById('statusBadge').classList.remove('on');
+  document.getElementById('dlAcq').disabled  = acquisitions.length === 0;
+  document.getElementById('dlEvt').disabled  = events.length === 0;
+  document.getElementById('btnSend').disabled = acquisitions.length === 0 && events.length === 0;
+}
+
+// ── Tables ────────────────────────────────────────────────────────────────────
+function appendAcqRow(row) {
+  const tbody = document.getElementById('bodyAcq');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${row.t}</td><td>${row.accX??'—'}</td><td>${row.accY??'—'}</td><td>${row.accZ??'—'}</td><td>${row.gyrX??'—'}</td><td>${row.gyrY??'—'}</td><td>${row.gyrZ??'—'}</td><td>${row.lat??'—'}</td><td>${row.lon??'—'}</td><td>${row.alt??'—'}</td>`;
+  tbody.appendChild(tr);
+  const wrap = document.getElementById('wrapAcq');
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+function logEvent(type) {
+  if (!isRecording) return;
+  const t = ((performance.now() - startTime) / 1000).toFixed(3);
+  const ev = {
+    t, type,
+    accX: fmtV(lastAcc.x), accY: fmtV(lastAcc.y), accZ: fmtV(lastAcc.z),
+    gyrX: fmtV(lastGyr.x), gyrY: fmtV(lastGyr.y), gyrZ: fmtV(lastGyr.z),
+    lat:  fmtV(lastGPS.lat), lon: fmtV(lastGPS.lon), alt: fmtV(lastGPS.alt)
+  };
+  events.push(ev); counts[type]++;
+  appendEvtRow(ev);
+  document.getElementById('totalEvt').textContent = events.length;
+  document.getElementById('evtCount').textContent = events.length;
+  const idMap  = { 'Accélération':'cntAccel', 'Freinage':'cntBrake', 'Virage':'cntTurn' };
+  const btnMap = { 'Accélération':'btnAccel', 'Freinage':'btnBrake', 'Virage':'btnTurn' };
+  document.getElementById(idMap[type]).textContent = counts[type];
+  if (events.length === 1) { document.getElementById('wrapEvt').style.display = ''; document.getElementById('emptyEvt').style.display = 'none'; }
+  const btn = document.getElementById(btnMap[type]);
+  btn.classList.add('flash'); setTimeout(() => btn.classList.remove('flash'), 250);
+  diag('Signalement : ' + type + ' a t=' + t + 's');
+}
+
+function appendEvtRow(ev) {
+  const tbody = document.getElementById('bodyEvt');
+  const cls = { 'Accélération':'c-accel', 'Freinage':'c-brake', 'Virage':'c-turn' };
+  const tr = document.createElement('tr');
+  tr.innerHTML = `<td>${ev.t}</td><td class="${cls[ev.type]}">${ev.type}</td><td>${ev.accX??'—'}</td><td>${ev.accY??'—'}</td><td>${ev.accZ??'—'}</td><td>${ev.gyrX??'—'}</td><td>${ev.gyrY??'—'}</td><td>${ev.gyrZ??'—'}</td><td>${ev.lat??'—'}</td><td>${ev.lon??'—'}</td><td>${ev.alt??'—'}</td>`;
+  tbody.appendChild(tr);
+  const wrap = document.getElementById('wrapEvt');
+  wrap.scrollTop = wrap.scrollHeight;
+}
+
+// ── CSV ───────────────────────────────────────────────────────────────────────
+function toCSV(headers, rows) {
+  const esc = v => {
+    if (v === null || v === undefined) return '';
+    const s = String(v);
+    return s.includes(',') || s.includes('"') ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  return [headers.join(','), ...rows.map(r => r.map(esc).join(','))].join('\r\n');
+}
+
+function buildCSV(type) {
+  if (type === 'acquisition') return toCSV(
+    ['Temps_s','AccX_ms2','AccY_ms2','AccZ_ms2','GyrX_degs','GyrY_degs','GyrZ_degs','Lat','Lon','Alt_m'],
+    acquisitions.map(r => [r.t,r.accX,r.accY,r.accZ,r.gyrX,r.gyrY,r.gyrZ,r.lat,r.lon,r.alt])
+  );
+  return toCSV(
+    ['Temps_s','Type','AccX_ms2','AccY_ms2','AccZ_ms2','GyrX_degs','GyrY_degs','GyrZ_degs','Lat','Lon','Alt_m'],
+    events.map(r => [r.t,r.type,r.accX,r.accY,r.accZ,r.gyrX,r.gyrY,r.gyrZ,r.lat,r.lon,r.alt])
+  );
+}
+
+function ts() {
+  const d = new Date();
+  return d.getFullYear()
+    + String(d.getMonth()+1).padStart(2,'0')
+    + String(d.getDate()).padStart(2,'0') + '_'
+    + String(d.getHours()).padStart(2,'0')
+    + String(d.getMinutes()).padStart(2,'0')
+    + String(d.getSeconds()).padStart(2,'0');
+}
+
+function downloadCSV(type) {
+  const csv  = buildCSV(type);
+  const name = (type === 'acquisition' ? 'acquisitions_' : 'signalements_') + ts() + '.csv';
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), { href: url, download: name });
+  a.click(); URL.revokeObjectURL(url);
+}
+
+// ── Upload Supabase Storage ───────────────────────────────────────────────────
+async function uploadToSupabase(type) {
+  const csv      = buildCSV(type);
+  const filename = (type === 'acquisition' ? 'acquisitions_' : 'signalements_') + ts() + '.csv';
+  const blob     = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
+
+  const res = await fetch(
+    SUPA_URL + '/storage/v1/object/' + BUCKET + '/' + filename,
+    {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + SUPA_ANON,
+        'apikey': SUPA_ANON,
+        'Content-Type': 'text/csv',
+        'x-upsert': 'true'
+      },
+      body: blob
+    }
+  );
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(filename + ' : ' + (err.message || err.error || 'HTTP ' + res.status));
+  }
+  return filename;
+}
+
+async function sendResults() {
+  const status = document.getElementById('sendStatus');
+  const btn    = document.getElementById('btnSend');
+  btn.disabled = true;
+  status.className = 'send-status loading';
+  status.textContent = 'Envoi en cours (1/2)...';
+  status.style.display = 'block';
+
+  try {
+    await uploadToSupabase('acquisition');
+    status.textContent = 'Envoi en cours (2/2)...';
+    await uploadToSupabase('events');
+    status.className = 'send-status ok';
+    status.textContent = 'Resultats envoyes avec succes.';
+    diag('Envoi Supabase OK');
+  } catch(e) {
+    status.className = 'send-status err';
+    status.textContent = 'Erreur : ' + e.message;
+    diag('Erreur envoi : ' + e.message);
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
