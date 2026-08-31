@@ -174,6 +174,16 @@
 
   <!-- Envoi Supabase -->
   <div>
+    <div class="section-label">Envoi des résultats</div>
+    <div style="margin-bottom:10px;">
+      <label style="font-size:11px; font-weight:600; letter-spacing:.07em; text-transform:uppercase; color:var(--muted); display:block; margin-bottom:6px;">Numéro de participant</label>
+      <input type="text" id="participantId" placeholder="Ex : P01"
+        style="width:100%; padding:10px 13px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; color:var(--text); font-family:inherit; font-size:14px; outline:none; transition:border-color .2s;"
+        onfocus="this.style.borderColor='var(--accent)'"
+        onblur="this.style.borderColor='var(--border)'"
+      />
+      <div id="errParticipant" style="font-size:11px; color:var(--danger); margin-top:4px; display:none;">Veuillez saisir votre numéro de participant.</div>
+    </div>
     <button class="btn btn-send" id="btnSend" onclick="sendResults()" disabled>Envoyer les résultats</button>
     <div class="send-status" id="sendStatus"></div>
   </div>
@@ -230,7 +240,7 @@
 // ── Config Supabase ───────────────────────────────────────────────────────────
 const SUPA_URL    = 'https://psmunhhgwpwcsnjixnqn.supabase.co';
 const SUPA_ANON   = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzbXVuaGhnd3B3Y3Nuaml4bnFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxNjcwMDgsImV4cCI6MjEwMzc0MzAwOH0.wPJW03N5_WRfOA_vzitzqPYGIlJalDFZUAnjvmMdL-Q';
-const BUCKET      = 'bus-resutls';
+const BUCKET      = 'bus-results';
 
 // ── État capteurs ─────────────────────────────────────────────────────────────
 let isRecording = false, startTime = null, acqInterval = null, gpsWatchId = null;
@@ -518,48 +528,65 @@ function downloadCSV(type) {
   a.click(); URL.revokeObjectURL(url);
 }
 
-// ── Upload Supabase Storage ───────────────────────────────────────────────────
-async function uploadToSupabase(type) {
+// ── Insert dans table Supabase ────────────────────────────────────────────────
+async function uploadToSupabase(type, participant) {
   const csv      = buildCSV(type);
-  const filename = (type === 'acquisition' ? 'acquisitions_' : 'signalements_') + ts() + '.csv';
-  const blob     = new Blob(['\uFEFF' + csv], { type: 'text/csv' });
+  const filename = (type === 'acquisition' ? 'acquisitions_' : 'signalements_') + participant + '_' + ts() + '.csv';
 
   const res = await fetch(
-    SUPA_URL + '/storage/v1/object/' + BUCKET + '/' + filename,
+    SUPA_URL + '/rest/v1/resultats',
     {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + SUPA_ANON,
         'apikey': SUPA_ANON,
-        'Content-Type': 'text/csv',
-        'x-upsert': 'true'
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
       },
-      body: blob
+      body: JSON.stringify({
+        type:        type,
+        filename:    filename,
+        contenu:     csv,
+        participant: participant
+      })
     }
   );
 
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(filename + ' : ' + (err.message || err.error || 'HTTP ' + res.status));
+    throw new Error(filename + ' : ' + (err.message || err.hint || err.error || 'HTTP ' + res.status));
   }
   return filename;
 }
 
 async function sendResults() {
-  const status = document.getElementById('sendStatus');
-  const btn    = document.getElementById('btnSend');
+  const status      = document.getElementById('sendStatus');
+  const btn         = document.getElementById('btnSend');
+  const partInput   = document.getElementById('participantId');
+  const errPart     = document.getElementById('errParticipant');
+  const participant = partInput.value.trim();
+
+  // Validation
+  if (!participant) {
+    errPart.style.display = 'block';
+    partInput.style.borderColor = 'var(--danger)';
+    return;
+  }
+  errPart.style.display = 'none';
+  partInput.style.borderColor = 'var(--border)';
+
   btn.disabled = true;
   status.className = 'send-status loading';
   status.textContent = 'Envoi en cours (1/2)...';
   status.style.display = 'block';
 
   try {
-    await uploadToSupabase('acquisition');
+    await uploadToSupabase('acquisition', participant);
     status.textContent = 'Envoi en cours (2/2)...';
-    await uploadToSupabase('events');
+    await uploadToSupabase('events', participant);
     status.className = 'send-status ok';
-    status.textContent = 'Resultats envoyes avec succes.';
-    diag('Envoi Supabase OK');
+    status.textContent = 'Resultats envoyes avec succes (participant : ' + participant + ').';
+    diag('Envoi Supabase OK — participant : ' + participant);
   } catch(e) {
     status.className = 'send-status err';
     status.textContent = 'Erreur : ' + e.message;
