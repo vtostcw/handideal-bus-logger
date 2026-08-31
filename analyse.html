@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bus Logger — Analyse</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:      #ffffff; --surface: #f5f5f5; --surface2: #ebebeb;
+    --border:  #d0d0d0; --text: #111111; --muted: #666666;
+    --accent:  #1a56db; --ok: #1a7f4b; --danger: #c0392b; --warn: #b45309;
+    --c-accel: #1a56db; --c-brake: #c0392b; --c-turn: #b45309;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #242424;
+      --border: #333333; --text: #f0f0f0; --muted: #888888;
+      --accent: #4d8cf5; --ok: #34d27a; --danger: #e05c4b; --warn: #f59e0b;
+      --c-accel: #4d8cf5; --c-brake: #e05c4b; --c-turn: #f59e0b;
+    }
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; display: flex; flex-direction: column; font-size: 15px; }
+  header { padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-size: 15px; font-weight: 600; }
+  .logo span { font-weight: 400; color: var(--muted); margin-left: 8px; font-size: 13px; }
+  main { flex: 1; padding: 24px; max-width: 1200px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .panel-header { padding: 12px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .panel-header h2 { font-size: 14px; font-weight: 600; }
+  .panel-body { padding: 16px 18px; }
+  .btn { border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: inherit; font-size: 13px; font-weight: 500; padding: 8px 14px; border-radius: 8px; cursor: pointer; transition: opacity .15s; white-space: nowrap; }
+  .btn:active { opacity: .7; }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .section-label { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
+  select, input[type=text] { padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: inherit; font-size: 13px; outline: none; }
+  select:focus, input:focus { border-color: var(--accent); }
+
+  /* Sélection participants */
+  .participants-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; border: 1.5px solid var(--border); background: var(--surface2); font-size: 13px; cursor: pointer; transition: all .15s; user-select: none; }
+  .chip.selected { border-color: var(--accent); background: rgba(26,86,219,.1); color: var(--accent); font-weight: 600; }
+  .chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* Légende */
+  .legend { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: 13px; }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
+
+  /* Carte */
+  #map { height: 480px; border-radius: 0; }
+
+  /* Panneau signalement au clic */
+  .detail-panel { display: none; padding: 16px 18px; border-top: 1px solid var(--border); }
+  .detail-panel.visible { display: block; }
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+  .values-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .values-table th { background: var(--surface2); color: var(--muted); font-weight: 500; font-size: 11px; padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border); }
+  .values-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); font-family: ui-monospace, monospace; font-size: 12px; }
+  .values-table tr:last-child td { border-bottom: none; }
+  .detail-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+
+  /* Tableau signalements */
+  .table-wrap { overflow-x: auto; max-height: 300px; overflow-y: auto; }
+  table.data-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: ui-monospace, monospace; }
+  table.data-table th { position: sticky; top: 0; z-index: 1; background: var(--surface2); color: var(--muted); font-weight: 500; padding: 7px 11px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
+  table.data-table th:first-child, table.data-table th:nth-child(2), table.data-table th:nth-child(3) { text-align: left; }
+  table.data-table td { padding: 6px 11px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  table.data-table td:first-child, table.data-table td:nth-child(2), table.data-table td:nth-child(3) { text-align: left; }
+  table.data-table tr:last-child td { border-bottom: none; }
+  table.data-table tr:hover td { background: var(--surface2); cursor: pointer; }
+  .c-accel { color: var(--c-accel); font-weight: 600; }
+  .c-brake  { color: var(--c-brake); font-weight: 600; }
+  .c-turn   { color: var(--c-turn);  font-weight: 600; }
+
+  .empty { padding: 32px; text-align: center; color: var(--muted); font-size: 13px; }
+  .loading { display: flex; align-items: center; justify-content: center; padding: 32px; gap: 10px; color: var(--muted); font-size: 13px; }
+  .spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">Bus Sensor Logger <span>Analyse</span></div>
+  <a href="admin.html" class="btn">Administration</a>
+</header>
+
+<main>
+
+  <!-- Sélection participants -->
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Participants</h2>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" onclick="selectAll()">Tout sélectionner</button>
+        <button class="btn" onclick="deselectAll()">Tout désélectionner</button>
+        <button class="btn btn-primary" id="btnLoad" onclick="loadSelected()" disabled>Charger</button>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div id="participantsGrid" class="participants-grid">
+        <div class="loading"><div class="spinner"></div> Chargement des participants…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Carte -->
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Carte des signalements</h2>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:var(--c-accel)"></div> Accélération</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--c-brake)"></div> Freinage</div>
+        <div class="legend-item"><div class="legend-dot" style="background:var(--c-turn)"></div> Virage</div>
+      </div>
+    </div>
+    <div id="map"></div>
+    <!-- Détail au clic -->
+    <div class="detail-panel" id="detailPanel">
+      <div class="detail-title" id="detailTitle"></div>
+      <div class="detail-grid">
+        <div>
+          <table class="values-table" id="detailTable"></table>
+        </div>
+        <div>
+          <canvas id="detailChart" height="180"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tableau signalements -->
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Tableau des signalements</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <select id="filterType" onchange="filterSignalements()">
+          <option value="">Tous les types</option>
+          <option value="Accélération">Accélération</option>
+          <option value="Freinage">Freinage</option>
+          <option value="Virage">Virage</option>
+        </select>
+        <select id="filterParticipant" onchange="filterSignalements()">
+          <option value="">Tous les participants</option>
+        </select>
+      </div>
+    </div>
+    <div id="tableContainer" class="table-wrap">
+      <div class="empty">Sélectionnez des participants et cliquez sur Charger</div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const SUPA_URL  = 'https://psmunhhgwpwcsnjixnqn.supabase.co';
+const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzbXVuaGhnd3B3Y3Nuaml4bnFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxNjcwMDgsImV4cCI6MjEwMzc0MzAwOH0.wPJW03N5_WRfOA_vzitzqPYGIlJalDFZUAnjvmMdL-Q';
+
+// Couleurs par participant (jusqu'à 10)
+const PARTICIPANT_COLORS = ['#1a56db','#c0392b','#1a7f4b','#b45309','#7c3aed','#0891b2','#be185d','#065f46','#92400e','#1e3a5f'];
+const TYPE_COLORS = { 'Accélération': '#1a56db', 'Freinage': '#c0392b', 'Virage': '#b45309' };
+const TYPE_SHAPES = { 'Accélération': 'circle', 'Freinage': 'square', 'Virage': 'triangle' };
+
+let map, detailChart;
+let allParticipants = [];
+let selectedParticipants = new Set();
+let participantColorMap = {};
+let allSignalements = []; // [{participant, type, temps, accX, accY, accZ, gyrX, gyrY, gyrZ, lat, lon, alt}]
+let filteredSignalements = [];
+let markers = [];
+
+// ── Init carte ────────────────────────────────────────────────────────────────
+function initMap() {
+  map = L.map('map').setView([47.7485, -3.3673], 13); // Lorient
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '© OpenStreetMap contributors', maxZoom: 19
+  }).addTo(map);
+}
+
+// ── Chargement participants ───────────────────────────────────────────────────
+async function loadParticipants() {
+  try {
+    const res = await fetch(
+      SUPA_URL + '/rest/v1/resultats?select=participant&type=eq.events',
+      { headers: { 'Authorization': 'Bearer ' + SUPA_ANON, 'apikey': SUPA_ANON } }
+    );
+    const data = await res.json();
+    allParticipants = [...new Set(data.map(r => r.participant).filter(Boolean))].sort();
+
+    allParticipants.forEach((p, i) => {
+      participantColorMap[p] = PARTICIPANT_COLORS[i % PARTICIPANT_COLORS.length];
+    });
+
+    renderParticipants();
+    document.getElementById('btnLoad').disabled = false;
+  } catch(e) {
+    document.getElementById('participantsGrid').innerHTML = '<div style="color:var(--danger);font-size:13px;">Erreur : ' + e.message + '</div>';
+  }
+}
+
+function renderParticipants() {
+  if (allParticipants.length === 0) {
+    document.getElementById('participantsGrid').innerHTML = '<div style="color:var(--muted);font-size:13px;">Aucun participant trouvé.</div>';
+    return;
+  }
+  document.getElementById('participantsGrid').innerHTML = allParticipants.map(p => `
+    <div class="chip ${selectedParticipants.has(p) ? 'selected' : ''}" onclick="toggleParticipant('${p}')">
+      <div class="dot" style="background:${participantColorMap[p]}"></div>
+      ${p}
+    </div>`).join('');
+}
+
+function toggleParticipant(p) {
+  if (selectedParticipants.has(p)) selectedParticipants.delete(p);
+  else selectedParticipants.add(p);
+  renderParticipants();
+}
+
+function selectAll()   { allParticipants.forEach(p => selectedParticipants.add(p)); renderParticipants(); }
+function deselectAll() { selectedParticipants.clear(); renderParticipants(); }
+
+// ── Chargement données ────────────────────────────────────────────────────────
+async function loadSelected() {
+  if (selectedParticipants.size === 0) { alert('Sélectionnez au moins un participant.'); return; }
+  document.getElementById('btnLoad').disabled = true;
+  document.getElementById('tableContainer').innerHTML = '<div class="loading"><div class="spinner"></div> Chargement…</div>';
+  allSignalements = [];
+
+  const list = [...selectedParticipants];
+  for (const p of list) {
+    try {
+      const res = await fetch(
+        SUPA_URL + '/rest/v1/resultats?select=contenu,participant&participant=eq.' + encodeURIComponent(p) + '&type=eq.events',
+        { headers: { 'Authorization': 'Bearer ' + SUPA_ANON, 'apikey': SUPA_ANON } }
+      );
+      const rows = await res.json();
+      for (const row of rows) {
+        const parsed = parseCSV(row.contenu, row.participant);
+        allSignalements.push(...parsed);
+      }
+    } catch(e) { console.error(p, e); }
+  }
+
+  // Mise à jour filtre participant
+  const sel = document.getElementById('filterParticipant');
+  sel.innerHTML = '<option value="">Tous les participants</option>' +
+    list.map(p => `<option value="${p}">${p}</option>`).join('');
+
+  clearMarkers();
+  filterSignalements();
+  document.getElementById('btnLoad').disabled = false;
+}
+
+// ── Parse CSV signalements ────────────────────────────────────────────────────
+function parseCSV(csv, participant) {
+  const lines = csv.trim().split('\n');
+  if (lines.length < 2) return [];
+  // header: Temps_s,Type,AccX_ms2,AccY_ms2,AccZ_ms2,GyrX_degs,GyrY_degs,GyrZ_degs,Lat,Lon,Alt_m
+  return lines.slice(1).map(line => {
+    const cols = line.split(',');
+    return {
+      participant,
+      temps: cols[0], type: cols[1],
+      accX: parseFloat(cols[2]), accY: parseFloat(cols[3]), accZ: parseFloat(cols[4]),
+      gyrX: parseFloat(cols[5]), gyrY: parseFloat(cols[6]), gyrZ: parseFloat(cols[7]),
+      lat: parseFloat(cols[8]), lon: parseFloat(cols[9]), alt: parseFloat(cols[10])
+    };
+  }).filter(r => !isNaN(r.lat) && !isNaN(r.lon));
+}
+
+// ── Filtrage ──────────────────────────────────────────────────────────────────
+function filterSignalements() {
+  const type = document.getElementById('filterType').value;
+  const part = document.getElementById('filterParticipant').value;
+  filteredSignalements = allSignalements.filter(r =>
+    (!type || r.type === type) && (!part || r.participant === part)
+  );
+  renderMarkers();
+  renderTable();
+}
+
+// ── Marqueurs carte ───────────────────────────────────────────────────────────
+function clearMarkers() {
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+}
+
+function makeIcon(type, participant) {
+  const color = TYPE_COLORS[type] || '#888';
+  const pColor = participantColorMap[participant] || '#888';
+  // Forme selon type, couleur selon participant si multi
+  const multiMode = selectedParticipants.size > 1;
+  const fill = multiMode ? pColor : color;
+
+  let svg;
+  if (type === 'Freinage') {
+    svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><rect x="2" y="2" width="18" height="18" rx="3" fill="${fill}" stroke="white" stroke-width="2"/></svg>`;
+  } else if (type === 'Virage') {
+    svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><polygon points="11,2 20,20 2,20" fill="${fill}" stroke="white" stroke-width="2"/></svg>`;
+  } else {
+    svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="9" fill="${fill}" stroke="white" stroke-width="2"/></svg>`;
+  }
+  return L.divIcon({ html: svg, className: '', iconSize: [22, 22], iconAnchor: [11, 11] });
+}
+
+function renderMarkers() {
+  clearMarkers();
+  if (filteredSignalements.length === 0) return;
+
+  const bounds = [];
+  filteredSignalements.forEach((s, i) => {
+    const marker = L.marker([s.lat, s.lon], { icon: makeIcon(s.type, s.participant) });
+    marker.on('click', () => showDetail(s, i));
+    marker.addTo(map);
+    markers.push(marker);
+    bounds.push([s.lat, s.lon]);
+  });
+
+  if (bounds.length > 0) map.fitBounds(bounds, { padding: [40, 40] });
+}
+
+// ── Détail au clic ────────────────────────────────────────────────────────────
+function showDetail(s, idx) {
+  const panel = document.getElementById('detailPanel');
+  const cls = { 'Accélération': 'c-accel', 'Freinage': 'c-brake', 'Virage': 'c-turn' };
+  document.getElementById('detailTitle').innerHTML =
+    `<span class="${cls[s.type] || ''}">${s.type}</span> — Participant ${s.participant} — t = ${s.temps} s`;
+
+  document.getElementById('detailTable').innerHTML = `
+    <thead><tr><th>Capteur</th><th>Axe</th><th>Valeur</th></tr></thead>
+    <tbody>
+      <tr><td>Accélération</td><td>X</td><td>${isNaN(s.accX) ? '—' : s.accX.toFixed(4)} m/s²</td></tr>
+      <tr><td>Accélération</td><td>Y</td><td>${isNaN(s.accY) ? '—' : s.accY.toFixed(4)} m/s²</td></tr>
+      <tr><td>Accélération</td><td>Z</td><td>${isNaN(s.accZ) ? '—' : s.accZ.toFixed(4)} m/s²</td></tr>
+      <tr><td>Gyroscope</td><td>X</td><td>${isNaN(s.gyrX) ? '—' : s.gyrX.toFixed(4)} °/s</td></tr>
+      <tr><td>Gyroscope</td><td>Y</td><td>${isNaN(s.gyrY) ? '—' : s.gyrY.toFixed(4)} °/s</td></tr>
+      <tr><td>Gyroscope</td><td>Z</td><td>${isNaN(s.gyrZ) ? '—' : s.gyrZ.toFixed(4)} °/s</td></tr>
+      <tr><td>GPS</td><td>Lat</td><td>${isNaN(s.lat) ? '—' : s.lat.toFixed(6)}</td></tr>
+      <tr><td>GPS</td><td>Lon</td><td>${isNaN(s.lon) ? '—' : s.lon.toFixed(6)}</td></tr>
+      <tr><td>GPS</td><td>Alt</td><td>${isNaN(s.alt) ? '—' : s.alt.toFixed(1)} m</td></tr>
+    </tbody>`;
+
+  // Graphique barres
+  if (detailChart) detailChart.destroy();
+  const ctx = document.getElementById('detailChart').getContext('2d');
+  const color = TYPE_COLORS[s.type] || '#888';
+  detailChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['AccX', 'AccY', 'AccZ', 'GyrX', 'GyrY', 'GyrZ'],
+      datasets: [{
+        label: 'Valeurs au signalement',
+        data: [s.accX, s.accY, s.accZ, s.gyrX, s.gyrY, s.gyrZ],
+        backgroundColor: color + 'cc',
+        borderColor: color,
+        borderWidth: 1,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { ticks: { font: { size: 10 } }, grid: { color: 'rgba(128,128,128,.15)' } },
+        x: { ticks: { font: { size: 10 } }, grid: { display: false } }
+      }
+    }
+  });
+
+  panel.classList.add('visible');
+
+  // Highlight ligne dans tableau
+  document.querySelectorAll('table.data-table tr[data-idx]').forEach(tr => {
+    tr.style.background = tr.dataset.idx == idx ? 'var(--surface2)' : '';
+  });
+  const targetRow = document.querySelector(`tr[data-idx="${idx}"]`);
+  if (targetRow) targetRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Tableau ───────────────────────────────────────────────────────────────────
+function renderTable() {
+  const container = document.getElementById('tableContainer');
+  if (filteredSignalements.length === 0) {
+    container.innerHTML = '<div class="empty">Aucun signalement à afficher.</div>';
+    return;
+  }
+  const cls = { 'Accélération': 'c-accel', 'Freinage': 'c-brake', 'Virage': 'c-turn' };
+  const rows = filteredSignalements.map((s, i) => `
+    <tr data-idx="${i}" onclick="showDetail(filteredSignalements[${i}], ${i}); focusMarker(${i});">
+      <td>${s.participant}</td>
+      <td><span class="${cls[s.type]}">${s.type}</span></td>
+      <td>${s.temps}</td>
+      <td>${isNaN(s.accX)?'—':s.accX.toFixed(4)}</td>
+      <td>${isNaN(s.accY)?'—':s.accY.toFixed(4)}</td>
+      <td>${isNaN(s.accZ)?'—':s.accZ.toFixed(4)}</td>
+      <td>${isNaN(s.gyrX)?'—':s.gyrX.toFixed(4)}</td>
+      <td>${isNaN(s.gyrY)?'—':s.gyrY.toFixed(4)}</td>
+      <td>${isNaN(s.gyrZ)?'—':s.gyrZ.toFixed(4)}</td>
+      <td>${isNaN(s.lat)?'—':s.lat.toFixed(6)}</td>
+      <td>${isNaN(s.lon)?'—':s.lon.toFixed(6)}</td>
+    </tr>`).join('');
+
+  container.innerHTML = `<table class="data-table">
+    <thead><tr>
+      <th>Participant</th><th>Type</th><th>Temps (s)</th>
+      <th>AccX</th><th>AccY</th><th>AccZ</th>
+      <th>GyrX</th><th>GyrY</th><th>GyrZ</th>
+      <th>Lat</th><th>Lon</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function focusMarker(idx) {
+  if (markers[idx]) {
+    map.setView(markers[idx].getLatLng(), 16, { animate: true });
+    markers[idx].openPopup();
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+initMap();
+loadParticipants();
+</script>
+</body>
+</html>
