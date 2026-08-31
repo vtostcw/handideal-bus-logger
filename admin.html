@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bus Logger — Administration</title>
+<style>
+  :root {
+    --bg:      #ffffff;
+    --surface: #f5f5f5;
+    --surface2:#ebebeb;
+    --border:  #d0d0d0;
+    --text:    #111111;
+    --muted:   #666666;
+    --accent:  #1a56db;
+    --ok:      #1a7f4b;
+    --danger:  #c0392b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg:      #0f0f0f;
+      --surface: #1a1a1a;
+      --surface2:#242424;
+      --border:  #333333;
+      --text:    #f0f0f0;
+      --muted:   #888888;
+      --accent:  #4d8cf5;
+      --ok:      #34d27a;
+      --danger:  #e05c4b;
+    }
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; display: flex; flex-direction: column; font-size: 15px; line-height: 1.5; }
+
+  header { padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; justify-content: space-between; }
+  .logo { font-size: 15px; font-weight: 600; }
+  .logo span { font-weight: 400; color: var(--muted); margin-left: 8px; font-size: 13px; }
+
+  main { flex: 1; padding: 24px; max-width: 1100px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+
+  .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .search-input {
+    padding: 9px 13px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-family: inherit; font-size: 14px;
+    outline: none; transition: border-color .2s; width: 220px;
+  }
+  .search-input:focus { border-color: var(--accent); }
+
+  select.filter-select {
+    padding: 9px 13px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 8px; color: var(--text); font-family: inherit; font-size: 14px;
+    outline: none; cursor: pointer;
+  }
+
+  .btn { border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: inherit; font-size: 13px; font-weight: 500; padding: 9px 16px; border-radius: 8px; cursor: pointer; transition: opacity .15s; white-space: nowrap; }
+  .btn:active { opacity: .7; }
+  .btn:disabled { opacity: .35; cursor: not-allowed; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-ok { background: var(--ok); border-color: var(--ok); color: #fff; }
+  .btn-sm { font-size: 12px; padding: 6px 11px; border-radius: 6px; }
+
+  .stats-row { display: flex; gap: 12px; flex-wrap: wrap; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px 18px; min-width: 140px; }
+  .stat-label { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin-bottom: 4px; }
+  .stat-value { font-size: 24px; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+
+  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .panel-header { padding: 12px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .panel-header h2 { font-size: 14px; font-weight: 600; }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { background: var(--surface2); color: var(--muted); font-weight: 500; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; padding: 9px 14px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; }
+  td { padding: 10px 14px; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+
+  .badge-type { display: inline-block; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 5px; }
+  .badge-acq  { background: rgba(26,86,219,.12); color: var(--accent); }
+  .badge-evt  { background: rgba(26,127,75,.12);  color: var(--ok); }
+
+  .empty-state { padding: 48px 24px; text-align: center; color: var(--muted); font-size: 14px; }
+
+  .loading { display: flex; align-items: center; justify-content: center; padding: 48px; gap: 10px; color: var(--muted); font-size: 14px; }
+  .spinner { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .status-bar { font-size: 12px; color: var(--muted); font-family: ui-monospace, monospace; }
+
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Bus Sensor Logger <span>Administration</span></div>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <span class="status-bar" id="statusBar">—</span>
+    <button class="btn" onclick="loadData()">Actualiser</button>
+  </div>
+</header>
+
+<main>
+
+  <!-- Stats -->
+  <div class="stats-row">
+    <div class="stat-card">
+      <div class="stat-label">Participants</div>
+      <div class="stat-value" id="statParticipants">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Envois totaux</div>
+      <div class="stat-value" id="statEnvois">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Acquisitions</div>
+      <div class="stat-value" id="statAcq">—</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Signalements</div>
+      <div class="stat-value" id="statEvt">—</div>
+    </div>
+  </div>
+
+  <!-- Tableau -->
+  <div class="panel">
+    <div class="panel-header">
+      <h2>Résultats</h2>
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <input class="search-input" type="text" id="searchInput" placeholder="Filtrer par participant..." oninput="filterTable()">
+        <select class="filter-select" id="typeFilter" onchange="filterTable()">
+          <option value="">Tous les types</option>
+          <option value="acquisition">Acquisitions</option>
+          <option value="events">Signalements</option>
+        </select>
+        <button class="btn btn-ok" id="btnDlAll" onclick="downloadAll()" disabled>Tout télécharger</button>
+      </div>
+    </div>
+    <div id="tableContainer">
+      <div class="loading"><div class="spinner"></div> Chargement des données…</div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+const SUPA_URL  = 'https://psmunhhgwpwcsnjixnqn.supabase.co';
+const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzbXVuaGhnd3B3Y3Nuaml4bnFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxNjcwMDgsImV4cCI6MjEwMzc0MzAwOH0.wPJW03N5_WRfOA_vzitzqPYGIlJalDFZUAnjvmMdL-Q';
+
+let allRows = [];
+let filteredRows = [];
+
+// ── Chargement ────────────────────────────────────────────────────────────────
+async function loadData() {
+  document.getElementById('tableContainer').innerHTML = '<div class="loading"><div class="spinner"></div> Chargement des données…</div>';
+  document.getElementById('statusBar').textContent = 'Chargement…';
+  document.getElementById('btnDlAll').disabled = true;
+
+  try {
+    const res = await fetch(
+      SUPA_URL + '/rest/v1/resultats?select=id,created_at,participant,type,filename&order=created_at.desc',
+      {
+        headers: {
+          'Authorization': 'Bearer ' + SUPA_ANON,
+          'apikey': SUPA_ANON
+        }
+      }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    allRows = await res.json();
+    updateStats();
+    filterTable();
+    document.getElementById('statusBar').textContent = 'Dernière mise à jour : ' + new Date().toLocaleTimeString('fr');
+    document.getElementById('btnDlAll').disabled = allRows.length === 0;
+  } catch(e) {
+    document.getElementById('tableContainer').innerHTML = '<div class="empty-state">Erreur de chargement : ' + e.message + '</div>';
+    document.getElementById('statusBar').textContent = 'Erreur';
+  }
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function updateStats() {
+  const participants = new Set(allRows.map(r => r.participant)).size;
+  const acq = allRows.filter(r => r.type === 'acquisition').length;
+  const evt = allRows.filter(r => r.type === 'events').length;
+  document.getElementById('statParticipants').textContent = participants;
+  document.getElementById('statEnvois').textContent = allRows.length;
+  document.getElementById('statAcq').textContent = acq;
+  document.getElementById('statEvt').textContent = evt;
+}
+
+// ── Filtrage ──────────────────────────────────────────────────────────────────
+function filterTable() {
+  const search = document.getElementById('searchInput').value.trim().toLowerCase();
+  const type   = document.getElementById('typeFilter').value;
+  filteredRows = allRows.filter(r => {
+    const matchP = !search || (r.participant && r.participant.toLowerCase().includes(search));
+    const matchT = !type   || r.type === type;
+    return matchP && matchT;
+  });
+  renderTable();
+}
+
+// ── Rendu tableau ─────────────────────────────────────────────────────────────
+function renderTable() {
+  if (filteredRows.length === 0) {
+    document.getElementById('tableContainer').innerHTML = '<div class="empty-state">Aucun résultat trouvé.</div>';
+    return;
+  }
+
+  const rows = filteredRows.map(r => {
+    const date = new Date(r.created_at).toLocaleString('fr-FR');
+    const badgeCls = r.type === 'acquisition' ? 'badge-acq' : 'badge-evt';
+    const badgeTxt = r.type === 'acquisition' ? 'Acquisition' : 'Signalements';
+    return `<tr>
+      <td>${r.participant || '—'}</td>
+      <td>${date}</td>
+      <td><span class="badge-type ${badgeCls}">${badgeTxt}</span></td>
+      <td style="color:var(--muted); font-family:ui-monospace,monospace; font-size:12px;">${r.filename}</td>
+      <td>
+        <button class="btn btn-sm btn-primary" onclick="downloadOne('${r.id}', '${r.filename}')">Télécharger</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  document.getElementById('tableContainer').innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>Participant</th>
+          <th>Date</th>
+          <th>Type</th>
+          <th>Fichier</th>
+          <th>Action</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+// ── Téléchargement d'un fichier ────────────────────────────────────────────────
+async function downloadOne(id, filename) {
+  try {
+    const res = await fetch(
+      SUPA_URL + '/rest/v1/resultats?id=eq.' + id + '&select=contenu,filename',
+      {
+        headers: {
+          'Authorization': 'Bearer ' + SUPA_ANON,
+          'apikey': SUPA_ANON
+        }
+      }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (!data || data.length === 0) throw new Error('Données introuvables');
+
+    triggerDownload(data[0].contenu, data[0].filename);
+  } catch(e) {
+    alert('Erreur lors du téléchargement : ' + e.message);
+  }
+}
+
+// ── Tout télécharger ──────────────────────────────────────────────────────────
+async function downloadAll() {
+  document.getElementById('btnDlAll').disabled = true;
+  document.getElementById('statusBar').textContent = 'Téléchargement en cours…';
+
+  try {
+    // Récupère tous les contenus en une seule requête
+    const res = await fetch(
+      SUPA_URL + '/rest/v1/resultats?select=contenu,filename,participant,type&order=participant.asc,created_at.asc',
+      {
+        headers: {
+          'Authorization': 'Bearer ' + SUPA_ANON,
+          'apikey': SUPA_ANON
+        }
+      }
+    );
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+
+    // Télécharge chaque fichier avec un délai pour ne pas bloquer le navigateur
+    for (let i = 0; i < data.length; i++) {
+      await new Promise(r => setTimeout(r, 300));
+      triggerDownload(data[i].contenu, data[i].filename);
+      document.getElementById('statusBar').textContent = 'Téléchargement ' + (i+1) + '/' + data.length + '…';
+    }
+
+    document.getElementById('statusBar').textContent = data.length + ' fichiers téléchargés — ' + new Date().toLocaleTimeString('fr');
+  } catch(e) {
+    alert('Erreur : ' + e.message);
+    document.getElementById('statusBar').textContent = 'Erreur';
+  }
+
+  document.getElementById('btnDlAll').disabled = false;
+}
+
+// ── Utilitaire téléchargement ─────────────────────────────────────────────────
+function triggerDownload(csvContent, filename) {
+  const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = Object.assign(document.createElement('a'), { href: url, download: filename });
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+loadData();
+</script>
+</body>
+</html>
