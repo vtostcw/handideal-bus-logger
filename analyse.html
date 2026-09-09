@@ -148,6 +148,9 @@
           <option value="Freinage">Freinage</option>
           <option value="Virage">Virage</option>
         </select>
+        <select id="filterLigne" onchange="filterSignalements()">
+          <option value="">Toutes les lignes</option>
+        </select>
         <select id="filterParticipant" onchange="filterSignalements()">
           <option value="">Tous les participants</option>
         </select>
@@ -238,21 +241,26 @@ async function loadSelected() {
   for (const p of list) {
     try {
       const res = await fetch(
-        SUPA_URL + '/rest/v1/resultats?select=contenu,participant&participant=eq.' + encodeURIComponent(p) + '&type=eq.events',
+        SUPA_URL + '/rest/v1/resultats?select=contenu,participant,ligne&participant=eq.' + encodeURIComponent(p) + '&type=eq.events',
         { headers: { 'Authorization': 'Bearer ' + SUPA_ANON, 'apikey': SUPA_ANON } }
       );
       const rows = await res.json();
       for (const row of rows) {
-        const parsed = parseCSV(row.contenu, row.participant);
+        const parsed = parseCSV(row.contenu, row.participant, row.ligne);
         allSignalements.push(...parsed);
       }
     } catch(e) { console.error(p, e); }
   }
 
-  // Mise à jour filtre participant
+  // Mise à jour filtres
   const sel = document.getElementById('filterParticipant');
   sel.innerHTML = '<option value="">Tous les participants</option>' +
     list.map(p => `<option value="${p}">${p}</option>`).join('');
+
+  const lignes = [...new Set(allSignalements.map(s => s.ligne).filter(Boolean))].sort();
+  const selL = document.getElementById('filterLigne');
+  selL.innerHTML = '<option value="">Toutes les lignes</option>' +
+    lignes.map(l => `<option value="${l}">${l}</option>`).join('');
 
   clearMarkers();
   filterSignalements();
@@ -260,7 +268,7 @@ async function loadSelected() {
 }
 
 // ── Parse CSV signalements ────────────────────────────────────────────────────
-function parseCSV(csv, participant) {
+function parseCSV(csv, participant, ligne) {
   const lines = csv.trim().split('\n');
   if (lines.length < 2) return [];
   // header: Temps_s,Type,AccX_ms2,AccY_ms2,AccZ_ms2,GyrX_degs,GyrY_degs,GyrZ_degs,Lat,Lon,Alt_m
@@ -268,6 +276,7 @@ function parseCSV(csv, participant) {
     const cols = line.split(',');
     return {
       participant,
+      ligne: ligne || '',
       temps: cols[0], type: cols[1],
       accX: parseFloat(cols[2]), accY: parseFloat(cols[3]), accZ: parseFloat(cols[4]),
       gyrX: parseFloat(cols[5]), gyrY: parseFloat(cols[6]), gyrZ: parseFloat(cols[7]),
@@ -278,10 +287,13 @@ function parseCSV(csv, participant) {
 
 // ── Filtrage ──────────────────────────────────────────────────────────────────
 function filterSignalements() {
-  const type = document.getElementById('filterType').value;
-  const part = document.getElementById('filterParticipant').value;
+  const type  = document.getElementById('filterType').value;
+  const part  = document.getElementById('filterParticipant').value;
+  const ligne = document.getElementById('filterLigne').value;
   filteredSignalements = allSignalements.filter(r =>
-    (!type || r.type === type) && (!part || r.participant === part)
+    (!type  || r.type        === type)  &&
+    (!part  || r.participant === part)  &&
+    (!ligne || r.ligne       === ligne)
   );
   renderMarkers();
   renderTable();
