@@ -301,20 +301,25 @@ async function loadSelected() {
 function parseCSV(csv, participant, ligne, sessionId, createdAt) {
   const lines = csv.trim().split('\n');
   if (lines.length < 2) return [];
+  // Fallback session_id : si NULL, on utilise participant + date tronquée à la minute
+  const sid = sessionId || (participant + '_' + (createdAt ? createdAt.slice(0,16) : 'unknown'));
   // header: Temps_s,Type,AccX_ms2,AccY_ms2,AccZ_ms2,GyrX_degs,GyrY_degs,GyrZ_degs,Lat,Lon,Alt_m
   return lines.slice(1).map(line => {
     const cols = line.split(',');
+    const lat = parseFloat(cols[8]);
+    const lon = parseFloat(cols[9]);
     return {
       participant,
       ligne: ligne || '',
-      sessionId: sessionId || '',
+      sessionId: sid,
       sessionLabel: sessionLabel(participant, createdAt),
       temps: cols[0], type: cols[1],
       accX: parseFloat(cols[2]), accY: parseFloat(cols[3]), accZ: parseFloat(cols[4]),
       gyrX: parseFloat(cols[5]), gyrY: parseFloat(cols[6]), gyrZ: parseFloat(cols[7]),
-      lat: parseFloat(cols[8]), lon: parseFloat(cols[9]), alt: parseFloat(cols[10])
+      lat, lon, alt: parseFloat(cols[10]),
+      hasGps: !isNaN(lat) && !isNaN(lon)
     };
-  }).filter(r => !isNaN(r.lat) && !isNaN(r.lon));
+  }).filter(r => r.type && r.type.trim() !== ''); // Garder toutes les lignes avec un type valide
 }
 
 // ── Filtrage ──────────────────────────────────────────────────────────────────
@@ -362,6 +367,7 @@ function renderMarkers() {
 
   const bounds = [];
   filteredSignalements.forEach((s, i) => {
+    if (!s.hasGps) { markers.push(null); return; } // Pas de GPS : pas de marqueur
     const marker = L.marker([s.lat, s.lon], { icon: makeIcon(s.type, s.participant, s.sessionId) });
     marker.on('click', () => showDetail(s, i));
     marker.addTo(map);
@@ -369,7 +375,8 @@ function renderMarkers() {
     bounds.push([s.lat, s.lon]);
   });
 
-  if (bounds.length > 0) map.fitBounds(bounds, { padding: [40, 40] });
+  if (bounds.length > 1) map.fitBounds(bounds, { padding: [40, 40] });
+  else if (bounds.length === 1) map.setView(bounds[0], 15);
 }
 
 // ── Détail au clic ────────────────────────────────────────────────────────────
@@ -465,9 +472,8 @@ function renderTable() {
 }
 
 function focusMarker(idx) {
-  if (markers[idx]) {
+  if (markers[idx] && markers[idx].getLatLng) {
     map.setView(markers[idx].getLatLng(), 16, { animate: true });
-    markers[idx].openPopup();
   }
 }
 
