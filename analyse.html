@@ -305,7 +305,8 @@ function parseCSV(csv, participant, ligne, sessionId, createdAt) {
   const sid = sessionId || (participant + '_' + (createdAt ? createdAt.slice(0,16) : 'unknown'));
   // header: Temps_s,Type,AccX_ms2,AccY_ms2,AccZ_ms2,GyrX_degs,GyrY_degs,GyrZ_degs,Lat,Lon,Alt_m
   return lines.slice(1).map(line => {
-    const cols = line.split(',');
+    const cols = line.replace(/\r/g, '').split(','); // Nettoyer les retours chariot
+    const type = cols[1] ? cols[1].trim() : '';
     const lat = parseFloat(cols[8]);
     const lon = parseFloat(cols[9]);
     return {
@@ -313,13 +314,14 @@ function parseCSV(csv, participant, ligne, sessionId, createdAt) {
       ligne: ligne || '',
       sessionId: sid,
       sessionLabel: sessionLabel(participant, createdAt),
-      temps: cols[0], type: cols[1],
+      temps: cols[0] ? cols[0].trim() : '',
+      type,
       accX: parseFloat(cols[2]), accY: parseFloat(cols[3]), accZ: parseFloat(cols[4]),
       gyrX: parseFloat(cols[5]), gyrY: parseFloat(cols[6]), gyrZ: parseFloat(cols[7]),
       lat, lon, alt: parseFloat(cols[10]),
       hasGps: !isNaN(lat) && !isNaN(lon)
     };
-  }).filter(r => r.type && r.type.trim() !== ''); // Garder toutes les lignes avec un type valide
+  }).filter(r => r.type !== ''); // Garder toutes les lignes avec un type valide
 }
 
 // ── Filtrage ──────────────────────────────────────────────────────────────────
