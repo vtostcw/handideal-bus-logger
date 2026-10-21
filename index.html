@@ -92,28 +92,6 @@
 </header>
 <main>
 
-  <!-- Métriques live -->
-  <div class="metrics-grid">
-    <div class="metric-card">
-      <div class="metric-label">Accélération</div>
-      <div class="metric-row"><span class="metric-axis">X</span><span id="lAccX">—</span></div>
-      <div class="metric-row"><span class="metric-axis">Y</span><span id="lAccY">—</span></div>
-      <div class="metric-row"><span class="metric-axis">Z</span><span id="lAccZ">—</span></div>
-    </div>
-    <div class="metric-card">
-      <div class="metric-label">Gyroscope</div>
-      <div class="metric-row"><span class="metric-axis">X</span><span id="lGyrX">—</span></div>
-      <div class="metric-row"><span class="metric-axis">Y</span><span id="lGyrY">—</span></div>
-      <div class="metric-row"><span class="metric-axis">Z</span><span id="lGyrZ">—</span></div>
-    </div>
-    <div class="metric-card">
-      <div class="metric-label">GPS</div>
-      <div class="metric-row"><span class="metric-axis">Lat</span><span id="lLat">—</span></div>
-      <div class="metric-row"><span class="metric-axis">Lon</span><span id="lLon">—</span></div>
-      <div class="metric-row"><span class="metric-axis">Alt</span><span id="lAlt">—</span></div>
-    </div>
-  </div>
-
   <!-- Contrôles -->
   <div>
     <div class="section-label">Enregistrement</div>
@@ -142,19 +120,9 @@
     </div>
   </div>
 
-  <!-- Compteurs -->
+  <!-- Compteur signalements -->
   <div class="counter-strip">
-    <span>Acquisitions : <b id="totalAcq">0</b></span>
     <span>Signalements : <b id="totalEvt">0</b></span>
-  </div>
-
-  <!-- Export local -->
-  <div>
-    <div class="section-label">Export local</div>
-    <div class="row2">
-      <button class="btn btn-sm" id="dlAcq" onclick="downloadCSV('acquisition')" disabled>Télécharger acquisitions</button>
-      <button class="btn btn-sm" id="dlEvt" onclick="downloadCSV('events')" disabled>Télécharger signalements</button>
-    </div>
   </div>
 
   <!-- Envoi -->
@@ -221,50 +189,6 @@
     <div class="send-status" id="sendStatus"></div>
   </div>
 
-  <!-- Diagnostic -->
-  <div class="panel">
-    <div class="panel-header"><h3>Diagnostic capteurs</h3></div>
-    <div class="diag-log" id="diagLog">En attente du démarrage…</div>
-  </div>
-
-  <!-- Table acquisitions -->
-  <div class="panel">
-    <div class="panel-header">
-      <h3>Données d'acquisition</h3>
-      <span class="panel-count" id="acqCount">0</span>
-    </div>
-    <div id="emptyAcq" class="empty">Démarrez l'acquisition pour voir les données</div>
-    <div class="table-wrap" style="display:none" id="wrapAcq">
-      <table>
-        <thead><tr>
-          <th>Temps (s)</th><th>AccX</th><th>AccY</th><th>AccZ</th>
-          <th>GyrX</th><th>GyrY</th><th>GyrZ</th>
-          <th>Lat</th><th>Lon</th><th>Alt (m)</th>
-        </tr></thead>
-        <tbody id="bodyAcq"></tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Table signalements -->
-  <div class="panel">
-    <div class="panel-header">
-      <h3>Signalements</h3>
-      <span class="panel-count" id="evtCount">0</span>
-    </div>
-    <div id="emptyEvt" class="empty">Aucun signalement enregistré</div>
-    <div class="table-wrap" style="display:none" id="wrapEvt">
-      <table>
-        <thead><tr>
-          <th>Temps (s)</th><th>Type</th>
-          <th>AccX</th><th>AccY</th><th>AccZ</th>
-          <th>GyrX</th><th>GyrY</th><th>GyrZ</th>
-          <th>Lat</th><th>Lon</th><th>Alt (m)</th>
-        </tr></thead>
-        <tbody id="bodyEvt"></tbody>
-      </table>
-    </div>
-  </div>
 
 </main>
 <script>
@@ -289,6 +213,7 @@ window.addEventListener('load', () => {
 
 // ── État capteurs ─────────────────────────────────────────────────────────────
 let isRecording = false, startTime = null, acqInterval = null, gpsWatchId = null;
+let sessionId = null; // Identifiant unique par expérimentation
 let accSensor = null, gyrSensor = null, usingGenAcc = false, usingGenGyr = false;
 let lastAcc = {x:null,y:null,z:null};
 let lastGyr = {x:null,y:null,z:null};
@@ -371,6 +296,8 @@ async function startRecording() {
   document.getElementById('sendStatus').style.display='none';
   document.getElementById('diagLog').innerHTML='';
 
+  // Générer un identifiant unique pour cette session d'enregistrement
+  sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
   diag('Demarrage des capteurs...');
   await startSensors();
   await new Promise(r=>setTimeout(r,600));
@@ -452,6 +379,7 @@ function downloadCSV(type) {
 
 // ── Envoi Supabase ────────────────────────────────────────────────────────────
 async function uploadToSupabase(type, participant, ligne) {
+  // sessionId est généré au startRecording — identifie une expérimentation unique
   const csv=buildCSV(type);
   const filename=(type==='acquisition'?'acquisitions_':'signalements_')+participant+'_'+ts()+'.csv';
   const res=await fetch(SUPA_URL+'/rest/v1/resultats',{
