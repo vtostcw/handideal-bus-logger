@@ -9,82 +9,92 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root {
-    --bg:      #ffffff; --surface: #f5f5f5; --surface2: #ebebeb;
-    --border:  #d0d0d0; --text: #111111; --muted: #666666;
-    --accent:  #1a56db; --ok: #1a7f4b; --danger: #c0392b; --warn: #b45309;
-    --c-accel: #1a56db; --c-brake: #c0392b; --c-turn: #b45309;
+    --bg:#ffffff;--surface:#f5f5f5;--surface2:#ebebeb;--border:#d0d0d0;
+    --text:#111111;--muted:#666666;--accent:#1a56db;--ok:#1a7f4b;
+    --danger:#c0392b;--warn:#b45309;
+    --c-accel:#1a56db;--c-brake:#c0392b;--c-turn:#b45309;
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0f0f0f; --surface: #1a1a1a; --surface2: #242424;
-      --border: #333333; --text: #f0f0f0; --muted: #888888;
-      --accent: #4d8cf5; --ok: #34d27a; --danger: #e05c4b; --warn: #f59e0b;
-      --c-accel: #4d8cf5; --c-brake: #e05c4b; --c-turn: #f59e0b;
-    }
-  }
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); min-height: 100dvh; display: flex; flex-direction: column; font-size: 15px; }
-  header { padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; justify-content: space-between; }
-  .logo { font-size: 15px; font-weight: 600; }
-  .logo span { font-weight: 400; color: var(--muted); margin-left: 8px; font-size: 13px; }
-  main { flex: 1; padding: 24px; max-width: 1200px; width: 100%; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
-  .panel { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
-  .panel-header { padding: 12px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-  .panel-header h2 { font-size: 14px; font-weight: 600; }
-  .panel-body { padding: 16px 18px; }
-  .btn { border: 1px solid var(--border); background: var(--surface); color: var(--text); font-family: inherit; font-size: 13px; font-weight: 500; padding: 8px 14px; border-radius: 8px; cursor: pointer; transition: opacity .15s; white-space: nowrap; }
-  .btn:active { opacity: .7; }
-  .btn:disabled { opacity: .35; cursor: not-allowed; }
-  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  .section-label { font-size: 11px; font-weight: 600; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); margin-bottom: 8px; }
-  select, input[type=text] { padding: 8px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: inherit; font-size: 13px; outline: none; }
-  select:focus, input:focus { border-color: var(--accent); }
-
-  /* Sélection participants */
-  .participants-grid { display: flex; gap: 8px; flex-wrap: wrap; }
-  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 20px; border: 1.5px solid var(--border); background: var(--surface2); font-size: 13px; cursor: pointer; transition: all .15s; user-select: none; }
-  .chip.selected { border-color: var(--accent); background: rgba(26,86,219,.1); color: var(--accent); font-weight: 600; }
-  .chip .dot { width: 8px; height: 8px; border-radius: 50%; }
-
-  /* Légende */
-  .legend { display: flex; gap: 16px; flex-wrap: wrap; align-items: center; font-size: 13px; }
-  .legend-item { display: flex; align-items: center; gap: 6px; }
-  .legend-dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid white; box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
-
-  /* Carte */
-  #map { height: 480px; border-radius: 0; }
-
-  /* Panneau signalement au clic */
-  .detail-panel { display: none; padding: 16px 18px; border-top: 1px solid var(--border); }
-  .detail-panel.visible { display: block; }
-  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
-  .values-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  .values-table th { background: var(--surface2); color: var(--muted); font-weight: 500; font-size: 11px; padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border); }
-  .values-table td { padding: 7px 10px; border-bottom: 1px solid var(--border); font-family: ui-monospace, monospace; font-size: 12px; }
-  .values-table tr:last-child td { border-bottom: none; }
-  .detail-title { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
-
-  /* Tableau signalements */
-  .table-wrap { overflow-x: auto; max-height: 300px; overflow-y: auto; }
-  table.data-table { width: 100%; border-collapse: collapse; font-size: 12px; font-family: ui-monospace, monospace; }
-  table.data-table th { position: sticky; top: 0; z-index: 1; background: var(--surface2); color: var(--muted); font-weight: 500; padding: 7px 11px; text-align: right; white-space: nowrap; border-bottom: 1px solid var(--border); }
-  table.data-table th:first-child, table.data-table th:nth-child(2), table.data-table th:nth-child(3) { text-align: left; }
-  table.data-table td { padding: 6px 11px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; }
-  table.data-table td:first-child, table.data-table td:nth-child(2), table.data-table td:nth-child(3) { text-align: left; }
-  table.data-table tr:last-child td { border-bottom: none; }
-  table.data-table tr:hover td { background: var(--surface2); cursor: pointer; }
-  .c-accel { color: var(--c-accel); font-weight: 600; }
-  .c-brake  { color: var(--c-brake); font-weight: 600; }
-  .c-turn   { color: var(--c-turn);  font-weight: 600; }
-
-  .empty { padding: 32px; text-align: center; color: var(--muted); font-size: 13px; }
-  .loading { display: flex; align-items: center; justify-content: center; padding: 32px; gap: 10px; color: var(--muted); font-size: 13px; }
-  .spinner { width: 16px; height: 16px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .7s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-
-  ::-webkit-scrollbar { width: 4px; height: 4px; }
-  ::-webkit-scrollbar-track { background: transparent; }
-  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+  @media(prefers-color-scheme:dark){:root{
+    --bg:#0f0f0f;--surface:#1a1a1a;--surface2:#242424;--border:#333333;
+    --text:#f0f0f0;--muted:#888888;--accent:#4d8cf5;--ok:#34d27a;
+    --danger:#e05c4b;--warn:#f59e0b;
+    --c-accel:#4d8cf5;--c-brake:#e05c4b;--c-turn:#f59e0b;
+  }}
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+  body{font-family:system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100dvh;display:flex;flex-direction:column;font-size:15px;}
+  header{padding:14px 24px;border-bottom:1px solid var(--border);background:var(--surface);display:flex;align-items:center;justify-content:space-between;}
+  .logo{font-size:15px;font-weight:600;}
+  .logo span{font-weight:400;color:var(--muted);margin-left:8px;font-size:13px;}
+  main{flex:1;padding:24px;max-width:1200px;width:100%;margin:0 auto;display:flex;flex-direction:column;gap:20px;}
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+  .panel-header{padding:12px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .panel-header h2{font-size:14px;font-weight:600;}
+  .panel-body{padding:16px 18px;}
+  .btn{border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:inherit;font-size:13px;font-weight:500;padding:8px 14px;border-radius:8px;cursor:pointer;transition:opacity .15s;white-space:nowrap;}
+  .btn:active{opacity:.7;} .btn:disabled{opacity:.35;cursor:not-allowed;}
+  .btn-primary{background:var(--accent);border-color:var(--accent);color:#fff;}
+  .section-label{font-size:11px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:8px;}
+  select,input[type=text],input[type=range]{padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:inherit;font-size:13px;outline:none;}
+  select:focus,input:focus{border-color:var(--accent);}
+  .participants-grid{display:flex;gap:8px;flex-wrap:wrap;}
+  .chip{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:20px;border:1.5px solid var(--border);background:var(--surface2);font-size:13px;cursor:pointer;transition:all .15s;user-select:none;}
+  .chip.selected{border-color:var(--accent);background:rgba(26,86,219,.1);color:var(--accent);font-weight:600;}
+  .chip .dot{width:8px;height:8px;border-radius:50%;}
+  .legend{display:flex;gap:16px;flex-wrap:wrap;align-items:center;font-size:13px;}
+  .legend-item{display:flex;align-items:center;gap:6px;}
+  .legend-dot{width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 1px rgba(0,0,0,.2);}
+  #map{height:480px;}
+  .detail-panel{display:none;padding:16px 18px;border-top:1px solid var(--border);}
+  .detail-panel.visible{display:block;}
+  .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
+  .values-table{width:100%;border-collapse:collapse;font-size:13px;}
+  .values-table th{background:var(--surface2);color:var(--muted);font-weight:500;font-size:11px;padding:7px 10px;text-align:left;border-bottom:1px solid var(--border);}
+  .values-table td{padding:7px 10px;border-bottom:1px solid var(--border);font-family:ui-monospace,monospace;font-size:12px;}
+  .values-table tr:last-child td{border-bottom:none;}
+  .detail-title{font-size:13px;font-weight:600;margin-bottom:10px;}
+  .table-wrap{overflow-x:auto;max-height:300px;overflow-y:auto;}
+  table.data-table{width:100%;border-collapse:collapse;font-size:12px;font-family:ui-monospace,monospace;}
+  table.data-table th{position:sticky;top:0;z-index:1;background:var(--surface2);color:var(--muted);font-weight:500;padding:7px 11px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border);}
+  table.data-table th:first-child,table.data-table th:nth-child(2),table.data-table th:nth-child(3){text-align:left;}
+  table.data-table td{padding:6px 11px;text-align:right;border-bottom:1px solid var(--border);white-space:nowrap;}
+  table.data-table td:first-child,table.data-table td:nth-child(2),table.data-table td:nth-child(3){text-align:left;}
+  table.data-table tr:last-child td{border-bottom:none;}
+  table.data-table tr:hover td{background:var(--surface2);cursor:pointer;}
+  .c-accel{color:var(--c-accel);font-weight:600;}
+  .c-brake{color:var(--c-brake);font-weight:600;}
+  .c-turn{color:var(--c-turn);font-weight:600;}
+  .empty{padding:32px;text-align:center;color:var(--muted);font-size:13px;}
+  .loading{display:flex;align-items:center;justify-content:center;padding:32px;gap:10px;color:var(--muted);font-size:13px;}
+  .spinner{width:16px;height:16px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  /* Analyse seuils */
+  .seuils-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  @media(max-width:700px){.seuils-grid{grid-template-columns:1fr;} .detail-grid{grid-template-columns:1fr;}}
+  .seuil-card{background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;}
+  .seuil-card h3{font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin-bottom:12px;}
+  .seuil-row{display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:13px;}
+  .seuil-row:last-child{border-bottom:none;}
+  .seuil-val{font-family:ui-monospace,monospace;font-weight:600;font-size:13px;}
+  .seuil-badge{font-size:11px;padding:2px 7px;border-radius:4px;font-weight:500;}
+  .badge-iso{background:rgba(26,86,219,.12);color:var(--accent);}
+  .badge-turk{background:rgba(26,127,75,.12);color:var(--ok);}
+  .badge-emp{background:rgba(180,83,9,.12);color:var(--warn);}
+  .iso-bar{display:flex;flex-direction:column;gap:4px;margin-top:4px;}
+  .iso-row{display:flex;align-items:center;gap:8px;font-size:12px;}
+  .iso-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+  .iso-label{flex:1;color:var(--muted);}
+  .iso-status{font-size:11px;font-weight:600;padding:1px 6px;border-radius:3px;}
+  .status-ok{background:rgba(26,127,75,.12);color:var(--ok);}
+  .status-warn{background:rgba(180,83,9,.12);color:var(--warn);}
+  .status-bad{background:rgba(192,57,43,.12);color:var(--danger);}
+  /* Heatmap controls */
+  .heatmap-controls{display:flex;align-items:center;gap:12px;flex-wrap:wrap;font-size:13px;}
+  .heatmap-controls label{color:var(--muted);font-size:12px;}
+  input[type=range]{padding:0;width:100px;cursor:pointer;}
+  #heatmap{height:420px;}
+  ::-webkit-scrollbar{width:4px;height:4px;}
+  ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
 </style>
 </head>
 <body>
@@ -92,10 +102,9 @@
   <div class="logo">Bus Sensor Logger <span>Analyse</span></div>
   <a href="admin.html" class="btn">Administration</a>
 </header>
-
 <main>
 
-  <!-- Sélection participants -->
+  <!-- Participants -->
   <div class="panel">
     <div class="panel-header">
       <h2>Participants</h2>
@@ -112,7 +121,7 @@
     </div>
   </div>
 
-  <!-- Carte -->
+  <!-- Carte signalements -->
   <div class="panel">
     <div class="panel-header">
       <h2>Carte des signalements</h2>
@@ -123,16 +132,11 @@
       </div>
     </div>
     <div id="map"></div>
-    <!-- Détail au clic -->
     <div class="detail-panel" id="detailPanel">
       <div class="detail-title" id="detailTitle"></div>
       <div class="detail-grid">
-        <div>
-          <table class="values-table" id="detailTable"></table>
-        </div>
-        <div>
-          <canvas id="detailChart" height="180"></canvas>
-        </div>
+        <div><table class="values-table" id="detailTable"></table></div>
+        <div><canvas id="detailChart" height="180"></canvas></div>
       </div>
     </div>
   </div>
@@ -148,15 +152,9 @@
           <option value="Freinage">Freinage</option>
           <option value="Virage">Virage</option>
         </select>
-        <select id="filterLigne" onchange="filterSignalements()">
-          <option value="">Toutes les lignes</option>
-        </select>
-        <select id="filterSession" onchange="filterSignalements()">
-          <option value="">Toutes les sessions</option>
-        </select>
-        <select id="filterParticipant" onchange="filterSignalements()">
-          <option value="">Tous les participants</option>
-        </select>
+        <select id="filterLigne" onchange="filterSignalements()"><option value="">Toutes les lignes</option></select>
+        <select id="filterSession" onchange="filterSignalements()"><option value="">Toutes les sessions</option></select>
+        <select id="filterParticipant" onchange="filterSignalements()"><option value="">Tous les participants</option></select>
       </div>
     </div>
     <div id="tableContainer" class="table-wrap">
@@ -164,92 +162,118 @@
     </div>
   </div>
 
-</main>
+  <!-- Analyse des seuils -->
+  <div class="panel" id="panelSeuils" style="display:none;">
+    <div class="panel-header">
+      <h2>Analyse des seuils d'inconfort</h2>
+      <span style="font-size:12px;color:var(--muted);" id="seuilsInfo"></span>
+    </div>
+    <div class="panel-body">
+      <div class="seuils-grid" id="seuilsGrid"></div>
 
+      <!-- Distribution des accélérations -->
+      <div style="margin-top:20px;">
+        <div class="section-label">Distribution des normes d'accélération (m/s²)</div>
+        <div style="position:relative;height:260px;margin-top:8px;">
+          <canvas id="distChart"></canvas>
+        </div>
+        <div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.6;">
+          Bleu = acquisitions (bruit de fond) — Rouge = instants de signalement — Lignes verticales = seuils de référence
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Heatmap GPS -->
+  <div class="panel" id="panelHeatmap" style="display:none;">
+    <div class="panel-header">
+      <h2>Zones de signalement fréquentes</h2>
+      <div class="heatmap-controls">
+        <label>Rayon de clustering</label>
+        <input type="range" id="clusterRadius" min="20" max="200" value="60" oninput="updateCluster()"/>
+        <span id="clusterRadiusVal">60 m</span>
+        <select id="heatmapType" onchange="updateCluster()">
+          <option value="">Tous les types</option>
+          <option value="Accélération">Accélération</option>
+          <option value="Freinage">Freinage</option>
+          <option value="Virage">Virage</option>
+        </select>
+      </div>
+    </div>
+    <div id="heatmap"></div>
+    <div class="panel-body" style="border-top:1px solid var(--border);">
+      <div class="section-label">Zones récurrentes (min. 2 signalements)</div>
+      <div id="hotspotList" class="empty">Chargez des données pour voir les zones récurrentes.</div>
+    </div>
+  </div>
+
+</main>
 <script>
 const SUPA_URL  = 'https://psmunhhgwpwcsnjixnqn.supabase.co';
 const SUPA_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBzbXVuaGhnd3B3Y3Nuaml4bnFuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgxNjcwMDgsImV4cCI6MjEwMzc0MzAwOH0.wPJW03N5_WRfOA_vzitzqPYGIlJalDFZUAnjvmMdL-Q';
 
-// Couleurs par participant (jusqu'à 10)
+// Seuils de référence
+const ISO_LEVELS = [
+  { val: 0.315, label: 'Pas inconfortable', color: '#22c55e' },
+  { val: 0.63,  label: 'Un peu inconfortable', color: '#84cc16' },
+  { val: 1.0,   label: 'Assez inconfortable', color: '#eab308' },
+  { val: 1.6,   label: 'Inconfortable', color: '#f97316' },
+  { val: 2.5,   label: 'Très inconfortable', color: '#ef4444' },
+];
+const TURK = { normal: 5.89, freinage: 7.36, virage: 5.49, global: 7.45 };
+
 const PARTICIPANT_COLORS = ['#1a56db','#c0392b','#1a7f4b','#b45309','#7c3aed','#0891b2','#be185d','#065f46','#92400e','#1e3a5f'];
-const TYPE_COLORS = { 'Accélération': '#1a56db', 'Freinage': '#c0392b', 'Virage': '#b45309' };
-const TYPE_SHAPES = { 'Accélération': 'circle', 'Freinage': 'square', 'Virage': 'triangle' };
-
-let map, detailChart;
-let allParticipants = [];
-let selectedParticipants = new Set();
-let participantColorMap = {};
-let allSignalements = []; // [{participant, type, temps, accX, accY, accZ, gyrX, gyrY, gyrZ, lat, lon, alt}]
-let filteredSignalements = [];
-let markers = [];
-
-// ── Gestion sessions ─────────────────────────────────────────────────────────
+const TYPE_COLORS = { 'Accélération':'#1a56db', 'Freinage':'#c0392b', 'Virage':'#b45309' };
 const SESSION_PALETTE = ['#1a56db','#c0392b','#1a7f4b','#b45309','#7c3aed','#0891b2','#be185d','#065f46','#92400e','#1e3a5f','#374151','#6d28d9'];
-let sessionColorMap = {};
-let sessionCounter = 0;
 
+let map, heatmapMap, detailChart, distChart;
+let allParticipants = [], selectedParticipants = new Set();
+let participantColorMap = {}, sessionColorMap = {}, sessionCounter = 0;
+let allSignalements = [], allAcquisitions = [], filteredSignalements = [];
+let markers = [], heatCircles = [];
+
+// ── Sessions ──────────────────────────────────────────────────────────────────
 function sessionLabel(participant, createdAt) {
   if (!createdAt) return participant;
   const d = new Date(createdAt);
-  return participant + ' – ' + d.toLocaleDateString('fr-FR') + ' ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+  return participant + ' – ' + d.toLocaleDateString('fr-FR') + ' ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'});
 }
-
 function getSessionColor(sessionId, participant) {
   const key = sessionId || participant;
-  if (!sessionColorMap[key]) {
-    sessionColorMap[key] = SESSION_PALETTE[sessionCounter % SESSION_PALETTE.length];
-    sessionCounter++;
-  }
+  if (!sessionColorMap[key]) { sessionColorMap[key] = SESSION_PALETTE[sessionCounter % SESSION_PALETTE.length]; sessionCounter++; }
   return sessionColorMap[key];
 }
 
-// ── Init carte ────────────────────────────────────────────────────────────────
+// ── Init cartes ───────────────────────────────────────────────────────────────
 function initMap() {
-  map = L.map('map').setView([47.7485, -3.3673], 13); // Lorient
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors', maxZoom: 19
-  }).addTo(map);
+  map = L.map('map').setView([47.7485, -3.3673], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap contributors', maxZoom:19 }).addTo(map);
+  heatmapMap = L.map('heatmap').setView([47.7485, -3.3673], 13);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap contributors', maxZoom:19 }).addTo(heatmapMap);
 }
 
-// ── Chargement participants ───────────────────────────────────────────────────
+// ── Participants ──────────────────────────────────────────────────────────────
 async function loadParticipants() {
   try {
-    const res = await fetch(
-      SUPA_URL + '/rest/v1/resultats?select=participant&type=eq.events',
-      { headers: { 'Authorization': 'Bearer ' + SUPA_ANON, 'apikey': SUPA_ANON } }
-    );
+    const res = await fetch(SUPA_URL + '/rest/v1/resultats?select=participant&type=eq.events',
+      { headers: { 'Authorization':'Bearer '+SUPA_ANON, 'apikey':SUPA_ANON } });
     const data = await res.json();
     allParticipants = [...new Set(data.map(r => r.participant).filter(Boolean))].sort();
-
-    allParticipants.forEach((p, i) => {
-      participantColorMap[p] = PARTICIPANT_COLORS[i % PARTICIPANT_COLORS.length];
-    });
-
+    allParticipants.forEach((p,i) => { participantColorMap[p] = PARTICIPANT_COLORS[i % PARTICIPANT_COLORS.length]; });
     renderParticipants();
     document.getElementById('btnLoad').disabled = false;
   } catch(e) {
     document.getElementById('participantsGrid').innerHTML = '<div style="color:var(--danger);font-size:13px;">Erreur : ' + e.message + '</div>';
   }
 }
-
 function renderParticipants() {
-  if (allParticipants.length === 0) {
-    document.getElementById('participantsGrid').innerHTML = '<div style="color:var(--muted);font-size:13px;">Aucun participant trouvé.</div>';
-    return;
-  }
+  if (allParticipants.length === 0) { document.getElementById('participantsGrid').innerHTML = '<div style="color:var(--muted);font-size:13px;">Aucun participant trouvé.</div>'; return; }
   document.getElementById('participantsGrid').innerHTML = allParticipants.map(p => `
-    <div class="chip ${selectedParticipants.has(p) ? 'selected' : ''}" onclick="toggleParticipant('${p}')">
-      <div class="dot" style="background:${participantColorMap[p]}"></div>
-      ${p}
+    <div class="chip ${selectedParticipants.has(p)?'selected':''}" onclick="toggleParticipant('${p}')">
+      <div class="dot" style="background:${participantColorMap[p]}"></div>${p}
     </div>`).join('');
 }
-
-function toggleParticipant(p) {
-  if (selectedParticipants.has(p)) selectedParticipants.delete(p);
-  else selectedParticipants.add(p);
-  renderParticipants();
-}
-
+function toggleParticipant(p) { if(selectedParticipants.has(p)) selectedParticipants.delete(p); else selectedParticipants.add(p); renderParticipants(); }
 function selectAll()   { allParticipants.forEach(p => selectedParticipants.add(p)); renderParticipants(); }
 function deselectAll() { selectedParticipants.clear(); renderParticipants(); }
 
@@ -258,225 +282,434 @@ async function loadSelected() {
   if (selectedParticipants.size === 0) { alert('Sélectionnez au moins un participant.'); return; }
   document.getElementById('btnLoad').disabled = true;
   document.getElementById('tableContainer').innerHTML = '<div class="loading"><div class="spinner"></div> Chargement…</div>';
-  allSignalements = [];
+  allSignalements = []; allAcquisitions = [];
 
   const list = [...selectedParticipants];
   for (const p of list) {
     try {
-      const res = await fetch(
-        SUPA_URL + '/rest/v1/resultats?select=contenu,participant,ligne,session_id,created_at&participant=eq.' + encodeURIComponent(p) + '&type=eq.events',
-        { headers: { 'Authorization': 'Bearer ' + SUPA_ANON, 'apikey': SUPA_ANON } }
-      );
-      const rows = await res.json();
-      for (const row of rows) {
-        const parsed = parseCSV(row.contenu, row.participant, row.ligne, row.session_id, row.created_at);
-        allSignalements.push(...parsed);
-      }
+      // Signalements
+      const r1 = await fetch(SUPA_URL + '/rest/v1/resultats?select=contenu,participant,ligne,session_id,created_at&participant=eq.' + encodeURIComponent(p) + '&type=eq.events',
+        { headers: { 'Authorization':'Bearer '+SUPA_ANON, 'apikey':SUPA_ANON } });
+      const rows1 = await r1.json();
+      for (const row of rows1) allSignalements.push(...parseEventsCSV(row.contenu, row.participant, row.ligne, row.session_id, row.created_at));
+
+      // Acquisitions (pour la distribution)
+      const r2 = await fetch(SUPA_URL + '/rest/v1/resultats?select=contenu,participant&participant=eq.' + encodeURIComponent(p) + '&type=eq.acquisition',
+        { headers: { 'Authorization':'Bearer '+SUPA_ANON, 'apikey':SUPA_ANON } });
+      const rows2 = await r2.json();
+      for (const row of rows2) allAcquisitions.push(...parseAcqCSV(row.contenu));
     } catch(e) { console.error(p, e); }
   }
 
-  // Mise à jour filtres
+  // Filtres
   const sel = document.getElementById('filterParticipant');
-  sel.innerHTML = '<option value="">Tous les participants</option>' +
-    list.map(p => `<option value="${p}">${p}</option>`).join('');
+  sel.innerHTML = '<option value="">Tous les participants</option>' + list.map(p=>`<option value="${p}">${p}</option>`).join('');
+  const lignes = [...new Set(allSignalements.map(s=>s.ligne).filter(Boolean))].sort();
+  document.getElementById('filterLigne').innerHTML = '<option value="">Toutes les lignes</option>' + lignes.map(l=>`<option value="${l}">${l}</option>`).join('');
+  const sessions = [...new Map(allSignalements.map(s=>[s.sessionId,s])).values()].sort((a,b)=>a.participant.localeCompare(b.participant));
+  document.getElementById('filterSession').innerHTML = '<option value="">Toutes les sessions</option>' + sessions.map(s=>`<option value="${s.sessionId}">${s.sessionLabel}</option>`).join('');
 
-  const lignes = [...new Set(allSignalements.map(s => s.ligne).filter(Boolean))].sort();
-  const selL = document.getElementById('filterLigne');
-  selL.innerHTML = '<option value="">Toutes les lignes</option>' +
-    lignes.map(l => `<option value="${l}">${l}</option>`).join('');
-
-  // Sessions : triées par participant puis par date
-  const sessions = [...new Map(allSignalements.map(s => [s.sessionId, s])).values()]
-    .sort((a,b) => a.participant.localeCompare(b.participant));
-  const selS = document.getElementById('filterSession');
-  selS.innerHTML = '<option value="">Toutes les sessions</option>' +
-    sessions.map(s => `<option value="${s.sessionId}">${s.sessionLabel}</option>`).join('');
-
-  clearMarkers();
   filterSignalements();
+  renderAnalyseSeuils();
+  renderHeatmap();
   document.getElementById('btnLoad').disabled = false;
 }
 
 // ── Parse CSV signalements ────────────────────────────────────────────────────
-function parseCSV(csv, participant, ligne, sessionId, createdAt) {
+function parseEventsCSV(csv, participant, ligne, sessionId, createdAt) {
   const lines = csv.trim().split('\n');
   if (lines.length < 2) return [];
-  // Fallback session_id : si NULL, on utilise participant + date tronquée à la minute
   const sid = sessionId || (participant + '_' + (createdAt ? createdAt.slice(0,16) : 'unknown'));
-  // header: Temps_s,Type,AccX_ms2,AccY_ms2,AccZ_ms2,GyrX_degs,GyrY_degs,GyrZ_degs,Lat,Lon,Alt_m
   return lines.slice(1).map(line => {
-    const cols = line.replace(/\r/g, '').split(','); // Nettoyer les retours chariot
+    const cols = line.replace(/\r/g,'').split(',');
     const type = cols[1] ? cols[1].trim() : '';
-    const lat = parseFloat(cols[8]);
-    const lon = parseFloat(cols[9]);
-    return {
-      participant,
-      ligne: ligne || '',
-      sessionId: sid,
-      sessionLabel: sessionLabel(participant, createdAt),
-      temps: cols[0] ? cols[0].trim() : '',
-      type,
-      accX: parseFloat(cols[2]), accY: parseFloat(cols[3]), accZ: parseFloat(cols[4]),
-      gyrX: parseFloat(cols[5]), gyrY: parseFloat(cols[6]), gyrZ: parseFloat(cols[7]),
-      lat, lon, alt: parseFloat(cols[10]),
-      hasGps: !isNaN(lat) && !isNaN(lon)
+    const lat = parseFloat(cols[8]), lon = parseFloat(cols[9]);
+    return { participant, ligne:ligne||'', sessionId:sid, sessionLabel:sessionLabel(participant,createdAt),
+      temps:cols[0]?cols[0].trim():'', type,
+      accX:parseFloat(cols[2]), accY:parseFloat(cols[3]), accZ:parseFloat(cols[4]),
+      gyrX:parseFloat(cols[5]), gyrY:parseFloat(cols[6]), gyrZ:parseFloat(cols[7]),
+      lat, lon, alt:parseFloat(cols[10]), hasGps:!isNaN(lat)&&!isNaN(lon),
+      norm: Math.sqrt(Math.pow(parseFloat(cols[2])||0,2)+Math.pow(parseFloat(cols[3])||0,2)+Math.pow(parseFloat(cols[4])||0,2))
     };
-  }).filter(r => r.type !== ''); // Garder toutes les lignes avec un type valide
+  }).filter(r => r.type !== '');
+}
+
+// ── Parse CSV acquisitions ────────────────────────────────────────────────────
+function parseAcqCSV(csv) {
+  const lines = csv.trim().split('\n');
+  if (lines.length < 2) return [];
+  return lines.slice(1).map(line => {
+    const cols = line.replace(/\r/g,'').split(',');
+    const x = parseFloat(cols[1]), y = parseFloat(cols[2]), z = parseFloat(cols[3]);
+    if (isNaN(x)||isNaN(y)||isNaN(z)) return null;
+    return { norm: Math.sqrt(x*x+y*y+z*z), accX:x, accY:y, accZ:z };
+  }).filter(Boolean);
 }
 
 // ── Filtrage ──────────────────────────────────────────────────────────────────
 function filterSignalements() {
-  const type    = document.getElementById('filterType').value;
-  const part    = document.getElementById('filterParticipant').value;
-  const ligne   = document.getElementById('filterLigne').value;
-  const session = document.getElementById('filterSession').value;
+  const type=document.getElementById('filterType').value;
+  const part=document.getElementById('filterParticipant').value;
+  const ligne=document.getElementById('filterLigne').value;
+  const session=document.getElementById('filterSession').value;
   filteredSignalements = allSignalements.filter(r =>
-    (!type    || r.type        === type)    &&
-    (!part    || r.participant === part)    &&
-    (!ligne   || r.ligne       === ligne)   &&
-    (!session || r.sessionId   === session)
-  );
-  renderMarkers();
-  renderTable();
+    (!type||r.type===type)&&(!part||r.participant===part)&&(!ligne||r.ligne===ligne)&&(!session||r.sessionId===session));
+  renderMarkers(); renderTable();
 }
 
 // ── Marqueurs carte ───────────────────────────────────────────────────────────
-function clearMarkers() {
-  markers.forEach(m => map.removeLayer(m));
-  markers = [];
-}
-
+function clearMarkers() { markers.forEach(m=>{if(m)map.removeLayer(m);}); markers=[]; }
 function makeIcon(type, participant, sessionId) {
-  const color = TYPE_COLORS[type] || '#888';
-  // En mode multi-participant : couleur par session ; en mode mono : couleur par type
-  const multiMode = selectedParticipants.size > 1;
-  const fill = multiMode ? getSessionColor(sessionId, participant) : color;
-
+  const color = TYPE_COLORS[type]||'#888';
+  const fill = selectedParticipants.size>1 ? getSessionColor(sessionId,participant) : color;
   let svg;
-  if (type === 'Freinage') {
-    svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><rect x="2" y="2" width="18" height="18" rx="3" fill="${fill}" stroke="white" stroke-width="2"/></svg>`;
-  } else if (type === 'Virage') {
-    svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><polygon points="11,2 20,20 2,20" fill="${fill}" stroke="white" stroke-width="2"/></svg>`;
-  } else {
-    svg = `<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="9" fill="${fill}" stroke="white" stroke-width="2"/></svg>`;
-  }
-  return L.divIcon({ html: svg, className: '', iconSize: [22, 22], iconAnchor: [11, 11] });
+  if(type==='Freinage') svg=`<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><rect x="2" y="2" width="18" height="18" rx="3" fill="${fill}" stroke="white" stroke-width="2"/></svg>`;
+  else if(type==='Virage') svg=`<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><polygon points="11,2 20,20 2,20" fill="${fill}" stroke="white" stroke-width="2"/></svg>`;
+  else svg=`<svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 22 22"><circle cx="11" cy="11" r="9" fill="${fill}" stroke="white" stroke-width="2"/></svg>`;
+  return L.divIcon({html:svg,className:'',iconSize:[22,22],iconAnchor:[11,11]});
 }
-
 function renderMarkers() {
   clearMarkers();
-  if (filteredSignalements.length === 0) return;
-
-  const bounds = [];
-  filteredSignalements.forEach((s, i) => {
-    if (!s.hasGps) { markers.push(null); return; } // Pas de GPS : pas de marqueur
-    const marker = L.marker([s.lat, s.lon], { icon: makeIcon(s.type, s.participant, s.sessionId) });
-    marker.on('click', () => showDetail(s, i));
-    marker.addTo(map);
-    markers.push(marker);
-    bounds.push([s.lat, s.lon]);
+  if(filteredSignalements.length===0) return;
+  const bounds=[];
+  filteredSignalements.forEach((s,i)=>{
+    if(!s.hasGps){markers.push(null);return;}
+    const marker=L.marker([s.lat,s.lon],{icon:makeIcon(s.type,s.participant,s.sessionId)});
+    marker.on('click',()=>showDetail(s,i)); marker.addTo(map); markers.push(marker); bounds.push([s.lat,s.lon]);
   });
-
-  if (bounds.length > 1) map.fitBounds(bounds, { padding: [40, 40] });
-  else if (bounds.length === 1) map.setView(bounds[0], 15);
+  if(bounds.length>1) map.fitBounds(bounds,{padding:[40,40]});
+  else if(bounds.length===1) map.setView(bounds[0],15);
 }
 
 // ── Détail au clic ────────────────────────────────────────────────────────────
 function showDetail(s, idx) {
-  const panel = document.getElementById('detailPanel');
-  const cls = { 'Accélération': 'c-accel', 'Freinage': 'c-brake', 'Virage': 'c-turn' };
-  document.getElementById('detailTitle').innerHTML =
-    `<span class="${cls[s.type] || ''}">${s.type}</span> — ${s.sessionLabel} — t = ${s.temps} s`;
-
-  document.getElementById('detailTable').innerHTML = `
+  const cls={'Accélération':'c-accel','Freinage':'c-brake','Virage':'c-turn'};
+  document.getElementById('detailTitle').innerHTML=`<span class="${cls[s.type]||''}">${s.type}</span> — ${s.sessionLabel} — t = ${s.temps} s`;
+  document.getElementById('detailTable').innerHTML=`
     <thead><tr><th>Capteur</th><th>Axe</th><th>Valeur</th></tr></thead>
     <tbody>
-      <tr><td>Accélération</td><td>X</td><td>${isNaN(s.accX) ? '—' : s.accX.toFixed(4)} m/s²</td></tr>
-      <tr><td>Accélération</td><td>Y</td><td>${isNaN(s.accY) ? '—' : s.accY.toFixed(4)} m/s²</td></tr>
-      <tr><td>Accélération</td><td>Z</td><td>${isNaN(s.accZ) ? '—' : s.accZ.toFixed(4)} m/s²</td></tr>
-      <tr><td>Gyroscope</td><td>X</td><td>${isNaN(s.gyrX) ? '—' : s.gyrX.toFixed(4)} °/s</td></tr>
-      <tr><td>Gyroscope</td><td>Y</td><td>${isNaN(s.gyrY) ? '—' : s.gyrY.toFixed(4)} °/s</td></tr>
-      <tr><td>Gyroscope</td><td>Z</td><td>${isNaN(s.gyrZ) ? '—' : s.gyrZ.toFixed(4)} °/s</td></tr>
-      <tr><td>GPS</td><td>Lat</td><td>${isNaN(s.lat) ? '—' : s.lat.toFixed(6)}</td></tr>
-      <tr><td>GPS</td><td>Lon</td><td>${isNaN(s.lon) ? '—' : s.lon.toFixed(6)}</td></tr>
-      <tr><td>GPS</td><td>Alt</td><td>${isNaN(s.alt) ? '—' : s.alt.toFixed(1)} m</td></tr>
+      <tr><td>Accélération</td><td>X</td><td>${isNaN(s.accX)?'—':s.accX.toFixed(4)} m/s²</td></tr>
+      <tr><td>Accélération</td><td>Y</td><td>${isNaN(s.accY)?'—':s.accY.toFixed(4)} m/s²</td></tr>
+      <tr><td>Accélération</td><td>Z</td><td>${isNaN(s.accZ)?'—':s.accZ.toFixed(4)} m/s²</td></tr>
+      <tr><td>Norme</td><td>√(X²+Y²+Z²)</td><td><b>${isNaN(s.norm)?'—':s.norm.toFixed(4)} m/s²</b></td></tr>
+      <tr><td>Gyroscope</td><td>X</td><td>${isNaN(s.gyrX)?'—':s.gyrX.toFixed(4)} °/s</td></tr>
+      <tr><td>Gyroscope</td><td>Y</td><td>${isNaN(s.gyrY)?'—':s.gyrY.toFixed(4)} °/s</td></tr>
+      <tr><td>Gyroscope</td><td>Z</td><td>${isNaN(s.gyrZ)?'—':s.gyrZ.toFixed(4)} °/s</td></tr>
+      <tr><td>GPS</td><td>Lat</td><td>${isNaN(s.lat)?'—':s.lat.toFixed(6)}</td></tr>
+      <tr><td>GPS</td><td>Lon</td><td>${isNaN(s.lon)?'—':s.lon.toFixed(6)}</td></tr>
     </tbody>`;
-
-  // Graphique barres
-  if (detailChart) detailChart.destroy();
-  const ctx = document.getElementById('detailChart').getContext('2d');
-  const color = TYPE_COLORS[s.type] || '#888';
-  detailChart = new Chart(ctx, {
-    type: 'bar',
-    data: {
-      labels: ['AccX', 'AccY', 'AccZ', 'GyrX', 'GyrY', 'GyrZ'],
-      datasets: [{
-        label: 'Valeurs au signalement',
-        data: [s.accX, s.accY, s.accZ, s.gyrX, s.gyrY, s.gyrZ],
-        backgroundColor: color + 'cc',
-        borderColor: color,
-        borderWidth: 1,
-        borderRadius: 4
-      }]
-    },
-    options: {
-      responsive: true,
-      plugins: { legend: { display: false } },
-      scales: {
-        y: { ticks: { font: { size: 10 } }, grid: { color: 'rgba(128,128,128,.15)' } },
-        x: { ticks: { font: { size: 10 } }, grid: { display: false } }
-      }
-    }
-  });
-
-  panel.classList.add('visible');
-
-  // Highlight ligne dans tableau
-  document.querySelectorAll('table.data-table tr[data-idx]').forEach(tr => {
-    tr.style.background = tr.dataset.idx == idx ? 'var(--surface2)' : '';
-  });
-  const targetRow = document.querySelector(`tr[data-idx="${idx}"]`);
-  if (targetRow) targetRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  if(detailChart) detailChart.destroy();
+  const ctx=document.getElementById('detailChart').getContext('2d');
+  const color=TYPE_COLORS[s.type]||'#888';
+  detailChart=new Chart(ctx,{type:'bar',data:{labels:['AccX','AccY','AccZ','GyrX','GyrY','GyrZ'],datasets:[{label:'Valeurs',data:[s.accX,s.accY,s.accZ,s.gyrX,s.gyrY,s.gyrZ],backgroundColor:color+'cc',borderColor:color,borderWidth:1,borderRadius:4}]},options:{responsive:true,plugins:{legend:{display:false}},scales:{y:{ticks:{font:{size:10}},grid:{color:'rgba(128,128,128,.15)'}},x:{ticks:{font:{size:10}},grid:{display:false}}}}});
+  document.getElementById('detailPanel').classList.add('visible');
+  document.querySelectorAll('table.data-table tr[data-idx]').forEach(tr=>{tr.style.background=tr.dataset.idx==idx?'var(--surface2)':'';});
+  const targetRow=document.querySelector(`tr[data-idx="${idx}"]`);
+  if(targetRow) targetRow.scrollIntoView({behavior:'smooth',block:'nearest'});
 }
 
 // ── Tableau ───────────────────────────────────────────────────────────────────
 function renderTable() {
-  const container = document.getElementById('tableContainer');
-  if (filteredSignalements.length === 0) {
-    container.innerHTML = '<div class="empty">Aucun signalement à afficher.</div>';
-    return;
-  }
-  const cls = { 'Accélération': 'c-accel', 'Freinage': 'c-brake', 'Virage': 'c-turn' };
-  const rows = filteredSignalements.map((s, i) => `
-    <tr data-idx="${i}" onclick="showDetail(filteredSignalements[${i}], ${i}); focusMarker(${i});">
-      <td>${s.sessionLabel}</td>
-      <td><span class="${cls[s.type]}">${s.type}</span></td>
-      <td>${s.temps}</td>
-      <td>${isNaN(s.accX)?'—':s.accX.toFixed(4)}</td>
-      <td>${isNaN(s.accY)?'—':s.accY.toFixed(4)}</td>
-      <td>${isNaN(s.accZ)?'—':s.accZ.toFixed(4)}</td>
-      <td>${isNaN(s.gyrX)?'—':s.gyrX.toFixed(4)}</td>
-      <td>${isNaN(s.gyrY)?'—':s.gyrY.toFixed(4)}</td>
-      <td>${isNaN(s.gyrZ)?'—':s.gyrZ.toFixed(4)}</td>
-      <td>${isNaN(s.lat)?'—':s.lat.toFixed(6)}</td>
-      <td>${isNaN(s.lon)?'—':s.lon.toFixed(6)}</td>
+  const container=document.getElementById('tableContainer');
+  if(filteredSignalements.length===0){container.innerHTML='<div class="empty">Aucun signalement à afficher.</div>';return;}
+  const cls={'Accélération':'c-accel','Freinage':'c-brake','Virage':'c-turn'};
+  const rows=filteredSignalements.map((s,i)=>`
+    <tr data-idx="${i}" onclick="showDetail(filteredSignalements[${i}],${i});focusMarker(${i});">
+      <td>${s.sessionLabel}</td><td><span class="${cls[s.type]}">${s.type}</span></td><td>${s.temps}</td>
+      <td>${isNaN(s.norm)?'—':s.norm.toFixed(4)}</td>
+      <td>${isNaN(s.accX)?'—':s.accX.toFixed(4)}</td><td>${isNaN(s.accY)?'—':s.accY.toFixed(4)}</td><td>${isNaN(s.accZ)?'—':s.accZ.toFixed(4)}</td>
+      <td>${isNaN(s.gyrX)?'—':s.gyrX.toFixed(4)}</td><td>${isNaN(s.gyrY)?'—':s.gyrY.toFixed(4)}</td><td>${isNaN(s.gyrZ)?'—':s.gyrZ.toFixed(4)}</td>
+      <td>${isNaN(s.lat)?'—':s.lat.toFixed(6)}</td><td>${isNaN(s.lon)?'—':s.lon.toFixed(6)}</td>
     </tr>`).join('');
+  container.innerHTML=`<table class="data-table"><thead><tr>
+    <th>Session</th><th>Type</th><th>Temps (s)</th><th>Norme</th>
+    <th>AccX</th><th>AccY</th><th>AccZ</th><th>GyrX</th><th>GyrY</th><th>GyrZ</th><th>Lat</th><th>Lon</th>
+  </tr></thead><tbody>${rows}</tbody></table>`;
+}
+function focusMarker(idx){if(markers[idx]&&markers[idx].getLatLng)map.setView(markers[idx].getLatLng(),16,{animate:true});}
 
-  container.innerHTML = `<table class="data-table">
-    <thead><tr>
-      <th>Participant</th><th>Type</th><th>Temps (s)</th>
-      <th>AccX</th><th>AccY</th><th>AccZ</th>
-      <th>GyrX</th><th>GyrY</th><th>GyrZ</th>
-      <th>Lat</th><th>Lon</th>
-    </tr></thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+// ── ANALYSE SEUILS ────────────────────────────────────────────────────────────
+function stats(arr) {
+  if(!arr||arr.length===0) return {mean:0,max:0,std:0,n:0};
+  const n=arr.length, mean=arr.reduce((a,b)=>a+b,0)/n;
+  const std=Math.sqrt(arr.reduce((a,b)=>a+Math.pow(b-mean,2),0)/(n>1?n-1:1));
+  const max=Math.max(...arr);
+  return {mean,max,std,n};
+}
+function statsBy(signalements, type) {
+  return stats(signalements.filter(s=>!type||s.type===type).map(s=>s.norm).filter(v=>!isNaN(v)&&v>0));
 }
 
-function focusMarker(idx) {
-  if (markers[idx] && markers[idx].getLatLng) {
-    map.setView(markers[idx].getLatLng(), 16, { animate: true });
+function renderAnalyseSeuils() {
+  if(allSignalements.length===0) return;
+  document.getElementById('panelSeuils').style.display='';
+
+  const acqNorms = allAcquisitions.map(s=>s.norm).filter(v=>!isNaN(v)&&v>0);
+  const evtNorms = allSignalements.map(s=>s.norm).filter(v=>!isNaN(v)&&v>0);
+  const stAcq = stats(acqNorms);
+  const stEvt = stats(evtNorms);
+  const stAccel = statsBy(allSignalements,'Accélération');
+  const stFrein = statsBy(allSignalements,'Freinage');
+  const stVirage = statsBy(allSignalements,'Virage');
+
+  // Seuil empirique = moy signalements - 1 écart-type acquisitions
+  const empGlobal = stEvt.mean > 0 && stAcq.std > 0 ? Math.max(stAcq.mean + stAcq.std, stEvt.mean - stAcq.std) : 0;
+  const empAccel  = stAccel.mean > 0 ? Math.max(stAcq.mean, stAccel.mean - stAcq.std) : null;
+  const empFrein  = stFrein.mean > 0 ? Math.max(stAcq.mean, stFrein.mean - stAcq.std) : null;
+  const empVirage = stVirage.mean > 0 ? Math.max(stAcq.mean, stVirage.mean - stAcq.std) : null;
+
+  document.getElementById('seuilsInfo').textContent =
+    stAcq.n + ' acquisitions · ' + evtNorms.length + ' signalements avec données';
+
+  // Niveau ISO de la moyenne signalements
+  function isoLevel(val) {
+    if(val < 0.315) return {label:'Pas inconfortable',cls:'status-ok'};
+    if(val < 0.63)  return {label:'Un peu inconfortable',cls:'status-ok'};
+    if(val < 1.0)   return {label:'Assez inconfortable',cls:'status-warn'};
+    if(val < 1.6)   return {label:'Inconfortable',cls:'status-warn'};
+    if(val < 2.5)   return {label:'Très inconfortable',cls:'status-bad'};
+    return {label:'Extrêmement inconfortable',cls:'status-bad'};
   }
+
+  const fmt = v => v !== null && v !== undefined ? v.toFixed(3) : '—';
+
+  document.getElementById('seuilsGrid').innerHTML = `
+    <!-- Seuil empirique -->
+    <div class="seuil-card">
+      <h3>Seuil empirique <span class="seuil-badge badge-emp">terrain</span></h3>
+      <div class="seuil-row"><span>Moy. acquisitions (fond)</span><span class="seuil-val">${fmt(stAcq.mean)} m/s²</span></div>
+      <div class="seuil-row"><span>Moy. signalements</span><span class="seuil-val">${fmt(stEvt.mean)} m/s²</span></div>
+      <div class="seuil-row" style="border-top:2px solid var(--border);margin-top:4px;padding-top:8px;">
+        <span><b>Seuil global</b></span><span class="seuil-val" style="color:var(--warn)">${fmt(empGlobal)} m/s²</span>
+      </div>
+      <div class="seuil-row"><span style="color:var(--c-accel)">Accélération</span><span class="seuil-val">${empAccel!==null?fmt(empAccel)+'  m/s²':'—'}</span></div>
+      <div class="seuil-row"><span style="color:var(--c-brake)">Freinage</span><span class="seuil-val">${empFrein!==null?fmt(empFrein)+' m/s²':'—'}</span></div>
+      <div class="seuil-row"><span style="color:var(--c-turn)">Virage</span><span class="seuil-val">${empVirage!==null?fmt(empVirage)+' m/s²':'—'}</span></div>
+    </div>
+
+    <!-- ISO 2631 -->
+    <div class="seuil-card">
+      <h3>ISO 2631-1 <span class="seuil-badge badge-iso">norme</span></h3>
+      <div class="iso-bar">
+        ${ISO_LEVELS.map(l=>`
+          <div class="iso-row">
+            <div class="iso-dot" style="background:${l.color}"></div>
+            <span class="iso-label">&lt; ${l.val} — ${l.label}</span>
+            <span class="iso-status ${stEvt.mean>l.val?'status-bad':'status-ok'}">${stEvt.mean>l.val?'DÉPASSE':'OK'}</span>
+          </div>`).join('')}
+      </div>
+      <div class="seuil-row" style="margin-top:10px;border-top:1px solid var(--border);padding-top:8px;">
+        <span>Niveau signalements</span>
+        <span class="seuil-badge ${isoLevel(stEvt.mean).cls}">${isoLevel(stEvt.mean).label}</span>
+      </div>
+    </div>
+
+    <!-- Turkovich 2011 -->
+    <div class="seuil-card">
+      <h3>Turkovich et al. 2011 <span class="seuil-badge badge-turk">littérature</span></h3>
+      <div class="seuil-row"><span>Conduite normale max (0.60 g)</span><span class="seuil-val">${TURK.normal.toFixed(2)} m/s²</span></div>
+      <div class="seuil-row"><span>Freinage fort max (0.75 g)</span><span class="seuil-val">${TURK.freinage.toFixed(2)} m/s²</span></div>
+      <div class="seuil-row"><span>Virage rapide max (0.56 g)</span><span class="seuil-val">${TURK.virage.toFixed(2)} m/s²</span></div>
+      <div class="seuil-row"><span>Toutes manœuvres (0.76 g)</span><span class="seuil-val">${TURK.global.toFixed(2)} m/s²</span></div>
+      <div class="seuil-row" style="border-top:2px solid var(--border);margin-top:4px;padding-top:8px;">
+        <span>Moy. signalements vs conduite normale</span>
+        <span class="seuil-badge ${stEvt.mean>TURK.normal?'status-bad':'status-ok'}">${stEvt.mean>TURK.normal?'DÉPASSE':'sous le seuil'}</span>
+      </div>
+    </div>
+
+    <!-- Synthèse -->
+    <div class="seuil-card">
+      <h3>Synthèse comparative</h3>
+      <div class="seuil-row"><span>Empirique global</span><span class="seuil-val" style="color:var(--warn)">${fmt(empGlobal)} m/s²</span></div>
+      <div class="seuil-row"><span>ISO 2631 "assez inconfortable"</span><span class="seuil-val" style="color:var(--accent)">1.000 m/s²</span></div>
+      <div class="seuil-row"><span>Turkovich conduite normale</span><span class="seuil-val" style="color:var(--ok)">5.890 m/s²</span></div>
+      <div class="seuil-row" style="border-top:2px solid var(--border);margin-top:4px;padding-top:8px;">
+        <span>Max signalements observé</span><span class="seuil-val">${fmt(stEvt.max)} m/s²</span>
+      </div>
+      <div class="seuil-row">
+        <span>Max acquisitions observé</span><span class="seuil-val">${fmt(stAcq.max)} m/s²</span>
+      </div>
+    </div>`;
+
+  // Distribution
+  renderDistribution(acqNorms, evtNorms, empGlobal);
+}
+
+// ── Distribution ──────────────────────────────────────────────────────────────
+function renderDistribution(acqNorms, evtNorms, empGlobal) {
+  if(distChart) distChart.destroy();
+  const ctx = document.getElementById('distChart').getContext('2d');
+
+  // Créer histogramme en tranches de 0.5 m/s²
+  const maxVal = Math.min(Math.max(...acqNorms, ...evtNorms, 10), 15);
+  const step = 0.5;
+  const bins = [];
+  for(let v=0; v<maxVal; v+=step) bins.push(+(v.toFixed(1)));
+
+  function histogram(norms) {
+    return bins.map(b => norms.filter(v=>v>=b&&v<b+step).length);
+  }
+
+  const acqHist = histogram(acqNorms);
+  const evtHist = histogram(evtNorms);
+  const labels  = bins.map(b => b.toFixed(1));
+
+  // Annotations lignes seuils
+  const annotations = {};
+  if(empGlobal>0) annotations['emp'] = { type:'line', xMin:empGlobal.toFixed(1), xMax:empGlobal.toFixed(1), borderColor:'#b45309', borderWidth:2, borderDash:[5,3], label:{content:'Empirique',display:true,position:'start',color:'#b45309',font:{size:10}} };
+  annotations['iso'] = { type:'line', xMin:'1.0', xMax:'1.0', borderColor:'#1a56db', borderWidth:2, borderDash:[5,3], label:{content:'ISO 2631',display:true,position:'start',color:'#1a56db',font:{size:10}} };
+
+  distChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label:'Acquisitions (fond)', data:acqHist, backgroundColor:'rgba(26,86,219,0.3)', borderColor:'rgba(26,86,219,0.7)', borderWidth:1 },
+        { label:'Signalements (inconfort)', data:evtHist, backgroundColor:'rgba(192,57,43,0.5)', borderColor:'rgba(192,57,43,0.9)', borderWidth:1 }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position:'top', labels:{ font:{size:11} } },
+        tooltip: { callbacks: { title: ctx => ctx[0].label + ' – ' + (+ctx[0].label+step).toFixed(1) + ' m/s²' } }
+      },
+      scales: {
+        x: { title:{ display:true, text:'Norme accélération (m/s²)', font:{size:11} }, ticks:{font:{size:9},maxRotation:45} },
+        y: { title:{ display:true, text:'Nombre de mesures', font:{size:11} }, ticks:{font:{size:10}} }
+      }
+    }
+  });
+
+  // Dessiner les lignes de seuils manuellement via afterDraw
+  const seuilLines = [
+    { val: empGlobal, color:'#b45309', label:'Seuil empirique' },
+    { val: 1.0,       color:'#1a56db', label:'ISO 2631' },
+    { val: TURK.normal, color:'#1a7f4b', label:'Turkovich' },
+  ];
+
+  const origDraw = distChart.draw.bind(distChart);
+  distChart.draw = function() {
+    origDraw();
+    const chart = distChart;
+    const ctx2 = chart.ctx;
+    seuilLines.forEach(sl => {
+      if(!sl.val || sl.val <= 0) return;
+      const x = chart.scales.x.getPixelForValue(sl.val.toFixed(1));
+      if(!x || isNaN(x)) return;
+      ctx2.save();
+      ctx2.beginPath();
+      ctx2.setLineDash([6,3]);
+      ctx2.moveTo(x, chart.chartArea.top);
+      ctx2.lineTo(x, chart.chartArea.bottom);
+      ctx2.strokeStyle = sl.color;
+      ctx2.lineWidth = 2;
+      ctx2.stroke();
+      ctx2.fillStyle = sl.color;
+      ctx2.font = '10px system-ui';
+      ctx2.fillText(sl.label, x+4, chart.chartArea.top+14);
+      ctx2.restore();
+    });
+  };
+}
+
+// ── HEATMAP GPS ───────────────────────────────────────────────────────────────
+function renderHeatmap() {
+  document.getElementById('panelHeatmap').style.display='';
+  updateCluster();
+}
+
+function updateCluster() {
+  const radius = parseInt(document.getElementById('clusterRadius').value);
+  const type   = document.getElementById('heatmapType').value;
+  document.getElementById('clusterRadiusVal').textContent = radius + ' m';
+
+  heatCircles.forEach(c => heatmapMap.removeLayer(c));
+  heatCircles = [];
+
+  const points = allSignalements.filter(s => s.hasGps && (!type || s.type === type));
+  if(points.length === 0) { document.getElementById('hotspotList').innerHTML = '<div class="empty">Aucun signalement avec coordonnées GPS.</div>'; return; }
+
+  // Clustering simple : regrouper les points à moins de "radius" mètres
+  const clusters = [];
+  const assigned = new Set();
+
+  points.forEach((p, i) => {
+    if(assigned.has(i)) return;
+    const cluster = [p];
+    assigned.add(i);
+    points.forEach((q, j) => {
+      if(assigned.has(j)) return;
+      if(distanceM(p.lat, p.lon, q.lat, q.lon) <= radius) {
+        cluster.push(q); assigned.add(j);
+      }
+    });
+    const lat = cluster.reduce((a,c)=>a+c.lat,0)/cluster.length;
+    const lon = cluster.reduce((a,c)=>a+c.lon,0)/cluster.length;
+    clusters.push({ lat, lon, count:cluster.length, types:cluster.map(c=>c.type), points:cluster });
+  });
+
+  clusters.sort((a,b) => b.count-a.count);
+
+  // Afficher cercles proportionnels sur la carte
+  const maxCount = clusters[0]?.count || 1;
+  clusters.forEach(cl => {
+    const intensity = cl.count / maxCount;
+    const r = 20 + intensity * 40;
+    // Couleur selon type majoritaire
+    const typeCounts = {};
+    cl.types.forEach(t => typeCounts[t]=(typeCounts[t]||0)+1);
+    const majorType = Object.entries(typeCounts).sort((a,b)=>b[1]-a[1])[0][0];
+    const color = TYPE_COLORS[majorType] || '#888';
+
+    const circle = L.circle([cl.lat, cl.lon], {
+      radius: r,
+      color, fillColor: color,
+      fillOpacity: 0.15 + intensity * 0.4,
+      weight: 2
+    }).addTo(heatmapMap);
+
+    circle.bindTooltip(`${cl.count} signalement(s)<br>${cl.types.join(', ')}`, {sticky:true});
+    heatCircles.push(circle);
+  });
+
+  if(heatCircles.length > 0) {
+    const group = L.featureGroup(heatCircles);
+    heatmapMap.fitBounds(group.getBounds(), {padding:[30,30]});
+  }
+
+  // Liste des hotspots
+  const hotspots = clusters.filter(cl => cl.count >= 2);
+  if(hotspots.length === 0) {
+    document.getElementById('hotspotList').innerHTML = '<div class="empty">Aucune zone avec 2 signalements ou plus dans ce rayon.</div>';
+    return;
+  }
+
+  document.getElementById('hotspotList').innerHTML = `
+    <table class="data-table" style="margin-top:8px;">
+      <thead><tr><th style="text-align:left;">Rang</th><th style="text-align:left;">Coordonnées</th><th>Signalements</th><th style="text-align:left;">Types</th><th style="text-align:left;">Participants</th></tr></thead>
+      <tbody>${hotspots.map((cl,i)=>{
+        const typeCounts={};
+        cl.types.forEach(t=>typeCounts[t]=(typeCounts[t]||0)+1);
+        const typeStr=Object.entries(typeCounts).map(([t,n])=>`<span class="${{Accélération:'c-accel',Freinage:'c-brake',Virage:'c-turn'}[t]}">${t} (${n})</span>`).join(' ');
+        const parts=[...new Set(cl.points.map(p=>p.participant))].join(', ');
+        return `<tr onclick="heatmapMap.setView([${cl.lat},${cl.lon}],17);" style="cursor:pointer;">
+          <td>${i+1}</td>
+          <td>${cl.lat.toFixed(5)}, ${cl.lon.toFixed(5)}</td>
+          <td style="text-align:right;font-weight:600;">${cl.count}</td>
+          <td>${typeStr}</td>
+          <td>${parts}</td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+}
+
+function distanceM(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2-lat1)*Math.PI/180;
+  const dLon = (lon2-lon1)*Math.PI/180;
+  const a = Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
