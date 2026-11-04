@@ -92,6 +92,27 @@
       <h2>Résultats</h2>
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
         <input type="text" id="searchInput" placeholder="Filtrer par participant..." oninput="filterTable()" style="width:200px;"/>
+        <select id="affluenceFilter" onchange="filterTable()" aria-label="Filtrer par affluence">
+          <option value="">Toute affluence</option>
+          <option value="Faible">Affluence faible</option>
+          <option value="Moyenne">Affluence moyenne</option>
+          <option value="Forte">Affluence forte</option>
+        </select>
+        <select id="meteoFilter" onchange="filterTable()" aria-label="Filtrer par météo">
+          <option value="">Toute météo</option>
+          <option value="Soleil">Soleil</option>
+          <option value="Nuageux">Nuageux</option>
+          <option value="Pluvieux">Pluvieux</option>
+          <option value="Orageux">Orageux</option>
+          <option value="Neige">Neige</option>
+          <option value="Brouillard">Brouillard</option>
+        </select>
+        <select id="traficFilter" onchange="filterTable()" aria-label="Filtrer par trafic">
+          <option value="">Tout trafic</option>
+          <option value="Faible">Trafic faible</option>
+          <option value="Moyen">Trafic moyen</option>
+          <option value="Fort">Trafic fort</option>
+        </select>
         <select id="typeFilter" onchange="filterTable()">
           <option value="">Tous les types</option>
           <option value="acquisition">Acquisitions</option>
@@ -116,7 +137,7 @@ async function loadData() {
   document.getElementById('statusBar').textContent='Chargement…';
   document.getElementById('btnDlAll').disabled=true;
   try {
-    const res=await fetch(SUPA_URL+'/rest/v1/resultats?select=id,created_at,participant,type,filename,ligne&order=created_at.desc',
+    const res=await fetch(SUPA_URL+'/rest/v1/resultats?select=id,created_at,participant,type,filename,ligne,affluence,meteo,trafic&order=created_at.desc',
       {headers:{'Authorization':'Bearer '+SUPA_ANON,'apikey':SUPA_ANON}});
     if(!res.ok) throw new Error('HTTP '+res.status);
     allRows=await res.json();
@@ -140,7 +161,10 @@ function updateStats() {
 function filterTable() {
   const search=document.getElementById('searchInput').value.trim().toLowerCase();
   const type=document.getElementById('typeFilter').value;
-  filteredRows=allRows.filter(r=>(!search||(r.participant&&r.participant.toLowerCase().includes(search)))&&(!type||r.type===type));
+  const aff=document.getElementById('affluenceFilter').value;
+  const met=document.getElementById('meteoFilter').value;
+  const tra=document.getElementById('traficFilter').value;
+  filteredRows=allRows.filter(r=>(!search||(r.participant&&r.participant.toLowerCase().includes(search)))&&(!type||r.type===type)&&(!aff||r.affluence===aff)&&(!met||r.meteo===met)&&(!tra||r.trafic===tra));
   renderTable();
 }
 
@@ -153,6 +177,9 @@ function renderTable() {
     return `<tr>
       <td>${r.participant||'—'}</td>
       <td>${r.ligne||'—'}</td>
+      <td>${r.affluence||'—'}</td>
+      <td>${r.meteo||'—'}</td>
+      <td>${r.trafic||'—'}</td>
       <td>${date}</td>
       <td><span class="badge-type ${badgeCls}">${badgeTxt}</span></td>
       <td style="color:var(--muted);font-family:ui-monospace,monospace;font-size:12px;">${r.filename}</td>
@@ -160,7 +187,7 @@ function renderTable() {
     </tr>`;
   }).join('');
   document.getElementById('tableContainer').innerHTML=`<div class="table-wrap"><table>
-    <thead><tr><th>Participant</th><th>Ligne</th><th>Date</th><th>Type</th><th>Fichier</th><th>Action</th></tr></thead>
+    <thead><tr><th>Participant</th><th>Ligne</th><th>Affluence</th><th>Meteo</th><th>Trafic</th><th>Date</th><th>Type</th><th>Fichier</th><th>Action</th></tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
 }

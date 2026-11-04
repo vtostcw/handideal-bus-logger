@@ -92,6 +92,12 @@
   .heatmap-controls label{color:var(--muted);font-size:12px;}
   input[type=range]{padding:0;width:100px;cursor:pointer;}
   #heatmap{height:420px;}
+  table.cmp-table{width:100%;border-collapse:collapse;font-size:12px;font-family:ui-monospace,monospace;}
+  table.cmp-table th{background:var(--surface2);color:var(--muted);font-weight:500;padding:7px 11px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border);}
+  table.cmp-table td{padding:7px 11px;text-align:right;white-space:nowrap;border-bottom:1px solid var(--border);}
+  table.cmp-table th:first-child,table.cmp-table td:first-child{text-align:left;font-weight:600;}
+  table.cmp-table tr:last-child td{border-bottom:none;}
+  table.cmp-table tr.low td{color:var(--muted);}
   ::-webkit-scrollbar{width:4px;height:4px;}
   ::-webkit-scrollbar-track{background:transparent;}
   ::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
@@ -155,6 +161,9 @@
         <select id="filterLigne" onchange="filterSignalements()"><option value="">Toutes les lignes</option></select>
         <select id="filterSession" onchange="filterSignalements()"><option value="">Toutes les sessions</option></select>
         <select id="filterParticipant" onchange="filterSignalements()"><option value="">Tous les participants</option></select>
+        <select id="filterAffluence" onchange="filterSignalements()" aria-label="Affluence"><option value="">Toute affluence</option><option value="Faible">Affluence faible</option><option value="Moyenne">Affluence moyenne</option><option value="Forte">Affluence forte</option></select>
+        <select id="filterMeteo" onchange="filterSignalements()" aria-label="Météo"><option value="">Toute météo</option><option value="Soleil">Soleil</option><option value="Nuageux">Nuageux</option><option value="Pluvieux">Pluvieux</option><option value="Orageux">Orageux</option><option value="Neige">Neige</option><option value="Brouillard">Brouillard</option></select>
+        <select id="filterTrafic" onchange="filterSignalements()" aria-label="Trafic"><option value="">Tout trafic</option><option value="Faible">Trafic faible</option><option value="Moyen">Trafic moyen</option><option value="Fort">Trafic fort</option></select>
       </div>
     </div>
     <div id="tableContainer" class="table-wrap">
@@ -166,9 +175,19 @@
   <div class="panel" id="panelSeuils" style="display:none;">
     <div class="panel-header">
       <h2>Analyse des seuils d'inconfort</h2>
-      <span style="font-size:12px;color:var(--muted);" id="seuilsInfo"></span>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div style="font-size:12px;">
+          <label style="color:var(--muted);font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;display:block;margin-bottom:4px;">Méthode de calcul</label>
+          <select id="methodeCalc" onchange="onMethodChange()" style="font-size:13px;">
+            <option value="ng">Accélération sans gravité (recommandé)</option>
+            <option value="brut">Accélération brute avec gravité (ancienne méthode)</option>
+          </select>
+        </div>
+        <span style="font-size:12px;color:var(--muted);" id="seuilsInfo"></span>
+      </div>
     </div>
     <div class="panel-body">
+      <div id="methodeNote" style="font-size:12px;color:var(--muted);background:var(--surface2);border-radius:8px;padding:10px 14px;margin-bottom:16px;line-height:1.6;border-left:3px solid var(--accent);"></div>
       <div class="seuils-grid" id="seuilsGrid"></div>
 
       <!-- Distribution des accélérations -->
@@ -181,6 +200,26 @@
           Bleu = acquisitions (bruit de fond) — Rouge = instants de signalement — Lignes verticales = seuils de référence
         </div>
       </div>
+    </div>
+  </div>
+
+  <!-- Comparaison selon les conditions -->
+  <div class="panel" id="panelConditions" style="display:none;">
+    <div class="panel-header">
+      <h2>Comparaison selon les conditions du trajet</h2>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <label for="condDim" style="color:var(--muted);font-size:12px;">Comparer selon</label>
+        <select id="condDim" onchange="renderComparaison()">
+          <option value="affluence">Affluence</option>
+          <option value="meteo">Météo</option>
+          <option value="trafic">Trafic</option>
+        </select>
+      </div>
+    </div>
+    <div class="panel-body">
+      <div id="condNote" style="font-size:12px;color:var(--muted);background:var(--surface2);border-radius:8px;padding:10px 14px;margin-bottom:14px;line-height:1.6;border-left:3px solid var(--accent);"></div>
+      <div id="condTable" class="table-wrap" style="max-height:none;"></div>
+      <div id="condChartWrap" style="position:relative;height:260px;margin-top:16px;"><canvas id="condChart"></canvas></div>
     </div>
   </div>
 
@@ -229,7 +268,7 @@ const SESSION_PALETTE = ['#1a56db','#c0392b','#1a7f4b','#b45309','#7c3aed','#089
 let map, heatmapMap, detailChart, distChart;
 let allParticipants = [], selectedParticipants = new Set();
 let participantColorMap = {}, sessionColorMap = {}, sessionCounter = 0;
-let allSignalements = [], allAcquisitions = [], filteredSignalements = [];
+let allSignalements = [], allAcquisitions = [], allAcqSessions = [], filteredSignalements = [];
 let markers = [], heatCircles = [];
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
@@ -282,22 +321,26 @@ async function loadSelected() {
   if (selectedParticipants.size === 0) { alert('Sélectionnez au moins un participant.'); return; }
   document.getElementById('btnLoad').disabled = true;
   document.getElementById('tableContainer').innerHTML = '<div class="loading"><div class="spinner"></div> Chargement…</div>';
-  allSignalements = []; allAcquisitions = [];
+  allSignalements = []; allAcquisitions = []; allAcqSessions = [];
 
   const list = [...selectedParticipants];
   for (const p of list) {
     try {
       // Signalements
-      const r1 = await fetch(SUPA_URL + '/rest/v1/resultats?select=contenu,participant,ligne,session_id,created_at&participant=eq.' + encodeURIComponent(p) + '&type=eq.events',
+      const r1 = await fetch(SUPA_URL + '/rest/v1/resultats?select=contenu,participant,ligne,session_id,created_at,affluence,meteo,trafic&participant=eq.' + encodeURIComponent(p) + '&type=eq.events',
         { headers: { 'Authorization':'Bearer '+SUPA_ANON, 'apikey':SUPA_ANON } });
       const rows1 = await r1.json();
-      for (const row of rows1) allSignalements.push(...parseEventsCSV(row.contenu, row.participant, row.ligne, row.session_id, row.created_at));
+      for (const row of rows1) for (const s of parseEventsCSV(row.contenu, row)) allSignalements.push(s);
 
       // Acquisitions (pour la distribution)
-      const r2 = await fetch(SUPA_URL + '/rest/v1/resultats?select=contenu,participant&participant=eq.' + encodeURIComponent(p) + '&type=eq.acquisition',
+      const r2 = await fetch(SUPA_URL + '/rest/v1/resultats?select=contenu,participant,session_id,created_at,affluence,meteo,trafic&participant=eq.' + encodeURIComponent(p) + '&type=eq.acquisition',
         { headers: { 'Authorization':'Bearer '+SUPA_ANON, 'apikey':SUPA_ANON } });
       const rows2 = await r2.json();
-      for (const row of rows2) allAcquisitions.push(...parseAcqCSV(row.contenu));
+      for (const row of rows2) {
+        const parsed = parseAcqCSV(row.contenu, row);
+        for (const s of parsed.samples) allAcquisitions.push(s);   // boucle : push(...tableau) dépasse la limite d'arguments sur les longs trajets
+        allAcqSessions.push({sessionId: parsed.sessionId, duration: parsed.duration, affluence: row.affluence || '', meteo: row.meteo || '', trafic: row.trafic || ''});
+      }
     } catch(e) { console.error(p, e); }
   }
 
@@ -316,34 +359,69 @@ async function loadSelected() {
 }
 
 // ── Parse CSV signalements ────────────────────────────────────────────────────
-function parseEventsCSV(csv, participant, ligne, sessionId, createdAt) {
+function currentUseNG() { const el = document.getElementById('methodeCalc'); return !el || el.value === 'ng'; }
+function normOf(s) { return (currentUseNG() && s.normNG !== null && s.normNG !== undefined) ? s.normNG : s.normBrut; }
+function onMethodChange() { renderTable(); renderAnalyseSeuils(); }
+
+// Les colonnes sont lues par leur NOM d'en-tête : les anciens et nouveaux formats de CSV sont tous lisibles.
+function csvHeader(line) { return line.replace(/\r/g,'').replace(/^\uFEFF/,'').split(',').map(s => s.trim()); }
+
+function parseEventsCSV(csv, row) {
+  const participant = row.participant, createdAt = row.created_at;
   const lines = csv.trim().split('\n');
   if (lines.length < 2) return [];
-  const sid = sessionId || (participant + '_' + (createdAt ? createdAt.slice(0,16) : 'unknown'));
+  const h = csvHeader(lines[0]);
+  const ix = n => h.indexOf(n);
+  const num = (cols, n) => { const i = ix(n); return i < 0 ? NaN : parseFloat(cols[i]); };
+  const txt = (cols, n) => { const i = ix(n); return (i < 0 || cols[i] === undefined) ? '' : cols[i].trim(); };
+  const sid = row.session_id || (participant + '_' + (createdAt ? createdAt.slice(0,16) : 'unknown'));
+  const label = sessionLabel(participant, createdAt);
   return lines.slice(1).map(line => {
     const cols = line.replace(/\r/g,'').split(',');
-    const type = cols[1] ? cols[1].trim() : '';
-    const lat = parseFloat(cols[8]), lon = parseFloat(cols[9]);
-    return { participant, ligne:ligne||'', sessionId:sid, sessionLabel:sessionLabel(participant,createdAt),
-      temps:cols[0]?cols[0].trim():'', type,
-      accX:parseFloat(cols[2]), accY:parseFloat(cols[3]), accZ:parseFloat(cols[4]),
-      gyrX:parseFloat(cols[5]), gyrY:parseFloat(cols[6]), gyrZ:parseFloat(cols[7]),
-      lat, lon, alt:parseFloat(cols[10]), hasGps:!isNaN(lat)&&!isNaN(lon),
-      norm: Math.sqrt(Math.pow(parseFloat(cols[2])||0,2)+Math.pow(parseFloat(cols[3])||0,2)+Math.pow(parseFloat(cols[4])||0,2))
+    const type = txt(cols, 'Type');
+    const accX = num(cols,'AccX_ms2'), accY = num(cols,'AccY_ms2'), accZ = num(cols,'AccZ_ms2');
+    const accXng = num(cols,'AccX_ng'), accYng = num(cols,'AccY_ng'), accZng = num(cols,'AccZ_ng');
+    const lat = num(cols,'Lat'), lon = num(cols,'Lon');
+    const ngOk = !isNaN(accXng) && !isNaN(accYng) && !isNaN(accZng);
+    return {
+      participant, ligne: row.ligne || '', sessionId: sid, sessionLabel: label,
+      temps: txt(cols,'Temps_s'), type,
+      accX, accY, accZ, accXng, accYng, accZng,
+      gyrX: num(cols,'GyrX_degs'), gyrY: num(cols,'GyrY_degs'), gyrZ: num(cols,'GyrZ_degs'),
+      lat, lon, alt: num(cols,'Alt_m'), hasGps: !isNaN(lat) && !isNaN(lon),
+      normBrut: Math.sqrt((accX||0)**2 + (accY||0)**2 + (accZ||0)**2),
+      normNG: ngOk ? Math.sqrt(accXng**2 + accYng**2 + accZng**2) : null,
+      hasNG: ngOk,
+      affluence: row.affluence || txt(cols,'Affluence'),
+      meteo: row.meteo || txt(cols,'Meteo'),
+      trafic: row.trafic || txt(cols,'Trafic')
     };
   }).filter(r => r.type !== '');
 }
 
-// ── Parse CSV acquisitions ────────────────────────────────────────────────────
-function parseAcqCSV(csv) {
+function parseAcqCSV(csv, row) {
   const lines = csv.trim().split('\n');
-  if (lines.length < 2) return [];
-  return lines.slice(1).map(line => {
-    const cols = line.replace(/\r/g,'').split(',');
-    const x = parseFloat(cols[1]), y = parseFloat(cols[2]), z = parseFloat(cols[3]);
-    if (isNaN(x)||isNaN(y)||isNaN(z)) return null;
-    return { norm: Math.sqrt(x*x+y*y+z*z), accX:x, accY:y, accZ:z };
-  }).filter(Boolean);
+  const sid = row.session_id || (row.participant + '_' + (row.created_at ? row.created_at.slice(0,16) : 'unknown'));
+  if (lines.length < 2) return {samples: [], duration: 0, sessionId: sid};
+  const h = csvHeader(lines[0]);
+  const iT = h.indexOf('Temps_s'), iX = h.indexOf('AccX_ms2'), iY = h.indexOf('AccY_ms2'), iZ = h.indexOf('AccZ_ms2');
+  const iXn = h.indexOf('AccX_ng'), iYn = h.indexOf('AccY_ng'), iZn = h.indexOf('AccZ_ng');
+  const aff = row.affluence || '', met = row.meteo || '', tra = row.trafic || '';
+  const samples = [];
+  for (let k = 1; k < lines.length; k++) {
+    const cols = lines[k].replace(/\r/g,'').split(',');
+    const x = parseFloat(cols[iX]), y = parseFloat(cols[iY]), z = parseFloat(cols[iZ]);
+    if (isNaN(x) && isNaN(y) && isNaN(z)) continue;
+    let normNG = null;
+    if (iXn >= 0) {
+      const xn = parseFloat(cols[iXn]), yn = parseFloat(cols[iYn]), zn = parseFloat(cols[iZn]);
+      if (!isNaN(xn) && !isNaN(yn) && !isNaN(zn)) normNG = Math.sqrt(xn*xn + yn*yn + zn*zn);
+    }
+    samples.push({normBrut: Math.sqrt((x||0)**2 + (y||0)**2 + (z||0)**2), normNG, hasNG: normNG !== null,
+                  sessionId: sid, affluence: aff, meteo: met, trafic: tra});
+  }
+  const lastT = parseFloat(lines[lines.length-1].replace(/\r/g,'').split(',')[iT]);
+  return {samples, duration: isNaN(lastT) ? 0 : lastT, sessionId: sid};
 }
 
 // ── Filtrage ──────────────────────────────────────────────────────────────────
@@ -352,8 +430,12 @@ function filterSignalements() {
   const part=document.getElementById('filterParticipant').value;
   const ligne=document.getElementById('filterLigne').value;
   const session=document.getElementById('filterSession').value;
+  const aff=document.getElementById('filterAffluence').value;
+  const met=document.getElementById('filterMeteo').value;
+  const tra=document.getElementById('filterTrafic').value;
   filteredSignalements = allSignalements.filter(r =>
-    (!type||r.type===type)&&(!part||r.participant===part)&&(!ligne||r.ligne===ligne)&&(!session||r.sessionId===session));
+    (!type||r.type===type)&&(!part||r.participant===part)&&(!ligne||r.ligne===ligne)&&(!session||r.sessionId===session)&&
+    (!aff||r.affluence===aff)&&(!met||r.meteo===met)&&(!tra||r.trafic===tra));
   renderMarkers(); renderTable();
 }
 
@@ -391,7 +473,7 @@ function showDetail(s, idx) {
       <tr><td>Accélération</td><td>X</td><td>${isNaN(s.accX)?'—':s.accX.toFixed(4)} m/s²</td></tr>
       <tr><td>Accélération</td><td>Y</td><td>${isNaN(s.accY)?'—':s.accY.toFixed(4)} m/s²</td></tr>
       <tr><td>Accélération</td><td>Z</td><td>${isNaN(s.accZ)?'—':s.accZ.toFixed(4)} m/s²</td></tr>
-      <tr><td>Norme</td><td>√(X²+Y²+Z²)</td><td><b>${isNaN(s.norm)?'—':s.norm.toFixed(4)} m/s²</b></td></tr>
+      <tr><td>Norme</td><td>√(X²+Y²+Z²)</td><td><b>${isNaN(normOf(s))?'—':normOf(s).toFixed(4)} m/s²</b></td></tr>
       <tr><td>Gyroscope</td><td>X</td><td>${isNaN(s.gyrX)?'—':s.gyrX.toFixed(4)} °/s</td></tr>
       <tr><td>Gyroscope</td><td>Y</td><td>${isNaN(s.gyrY)?'—':s.gyrY.toFixed(4)} °/s</td></tr>
       <tr><td>Gyroscope</td><td>Z</td><td>${isNaN(s.gyrZ)?'—':s.gyrZ.toFixed(4)} °/s</td></tr>
@@ -416,14 +498,14 @@ function renderTable() {
   const rows=filteredSignalements.map((s,i)=>`
     <tr data-idx="${i}" onclick="showDetail(filteredSignalements[${i}],${i});focusMarker(${i});">
       <td>${s.sessionLabel}</td><td><span class="${cls[s.type]}">${s.type}</span></td><td>${s.temps}</td>
-      <td>${isNaN(s.norm)?'—':s.norm.toFixed(4)}</td>
+      <td>${isNaN(normOf(s))?'—':normOf(s).toFixed(4)}</td>
       <td>${isNaN(s.accX)?'—':s.accX.toFixed(4)}</td><td>${isNaN(s.accY)?'—':s.accY.toFixed(4)}</td><td>${isNaN(s.accZ)?'—':s.accZ.toFixed(4)}</td>
       <td>${isNaN(s.gyrX)?'—':s.gyrX.toFixed(4)}</td><td>${isNaN(s.gyrY)?'—':s.gyrY.toFixed(4)}</td><td>${isNaN(s.gyrZ)?'—':s.gyrZ.toFixed(4)}</td>
-      <td>${isNaN(s.lat)?'—':s.lat.toFixed(6)}</td><td>${isNaN(s.lon)?'—':s.lon.toFixed(6)}</td>
+      <td>${isNaN(s.lat)?'—':s.lat.toFixed(6)}</td><td>${isNaN(s.lon)?'—':s.lon.toFixed(6)}</td><td>${s.affluence||'—'}</td><td>${s.meteo||'—'}</td><td>${s.trafic||'—'}</td>
     </tr>`).join('');
   container.innerHTML=`<table class="data-table"><thead><tr>
     <th>Session</th><th>Type</th><th>Temps (s)</th><th>Norme</th>
-    <th>AccX</th><th>AccY</th><th>AccZ</th><th>GyrX</th><th>GyrY</th><th>GyrZ</th><th>Lat</th><th>Lon</th>
+    <th>AccX</th><th>AccY</th><th>AccZ</th><th>GyrX</th><th>GyrY</th><th>GyrZ</th><th>Lat</th><th>Lon</th><th>Affluence</th><th>Météo</th><th>Trafic</th>
   </tr></thead><tbody>${rows}</tbody></table>`;
 }
 function focusMarker(idx){if(markers[idx]&&markers[idx].getLatLng)map.setView(markers[idx].getLatLng(),16,{animate:true});}
@@ -436,24 +518,55 @@ function stats(arr) {
   const max=Math.max(...arr);
   return {mean,max,std,n};
 }
-function statsBy(signalements, type) {
-  return stats(signalements.filter(s=>!type||s.type===type).map(s=>s.norm).filter(v=>!isNaN(v)&&v>0));
+function statsBy(signalements, type, useNG) {
+  return stats(signalements.filter(s=>!type||s.type===type).map(s=>{
+    if(useNG && s.normNG!==null) return s.normNG;
+    return s.normBrut;
+  }).filter(v=>!isNaN(v)&&v>0));
+}
+
+// Seuil empirique : max( moy. fond + 1 écart-type fond ; moy. signalements - 1 écart-type fond )
+function empThreshold(stAcq, stEvt) {
+  return (stEvt.mean > 0 && stAcq.std > 0) ? Math.max(stAcq.mean + stAcq.std, stEvt.mean - stAcq.std) : 0;
 }
 
 function renderAnalyseSeuils() {
   if(allSignalements.length===0) return;
   document.getElementById('panelSeuils').style.display='';
 
-  const acqNorms = allAcquisitions.map(s=>s.norm).filter(v=>!isNaN(v)&&v>0);
-  const evtNorms = allSignalements.map(s=>s.norm).filter(v=>!isNaN(v)&&v>0);
+  const useNG = document.getElementById('methodeCalc').value === 'ng';
+  const hasNGData = allSignalements.some(s=>s.hasNG) && allAcquisitions.some(s=>s.hasNG);
+
+  // Note méthodologique
+  const noteEl = document.getElementById('methodeNote');
+  if (useNG && hasNGData) {
+    noteEl.innerHTML = '<b>Méthode active : accélération sans gravité (recommandée).</b> La composante gravitationnelle (~9.81 m/s² sur axe Z) a été soustraite. Les valeurs sont directement comparables à ISO 2631-1 (usage qualitatif) et à Turkovich et al. 2011.';
+    noteEl.style.borderLeftColor = 'var(--ok)';
+  } else if (useNG && !hasNGData) {
+    noteEl.innerHTML = '<b>Données sans gravité non disponibles</b> pour ces enregistrements (ancienne version de l\'app). Affichage de la méthode brute avec gravité.';
+    noteEl.style.borderLeftColor = 'var(--warn)';
+  } else {
+    noteEl.innerHTML = '<b>Méthode active : accélération brute avec gravité (ancienne méthode).</b> La gravité (~9.81 m/s²) est incluse dans l\'axe Z, ce qui gonfle artificiellement les normes. Les seuils ISO 2631-1 ne sont pas directement comparables — usage qualitatif uniquement.';
+    noteEl.style.borderLeftColor = 'var(--danger)';
+  }
+
+  const acqNorms = allAcquisitions.map(s => {
+    if(useNG && s.normNG !== null) return s.normNG;
+    return s.normBrut;
+  }).filter(v=>!isNaN(v)&&v>0);
+
+  const evtNorms = allSignalements.map(s => {
+    if(useNG && s.normNG !== null) return s.normNG;
+    return s.normBrut;
+  }).filter(v=>!isNaN(v)&&v>0);
   const stAcq = stats(acqNorms);
   const stEvt = stats(evtNorms);
-  const stAccel = statsBy(allSignalements,'Accélération');
-  const stFrein = statsBy(allSignalements,'Freinage');
-  const stVirage = statsBy(allSignalements,'Virage');
+  const stAccel = statsBy(allSignalements,'Accélération',useNG);
+  const stFrein = statsBy(allSignalements,'Freinage',useNG);
+  const stVirage = statsBy(allSignalements,'Virage',useNG);
 
   // Seuil empirique = moy signalements - 1 écart-type acquisitions
-  const empGlobal = stEvt.mean > 0 && stAcq.std > 0 ? Math.max(stAcq.mean + stAcq.std, stEvt.mean - stAcq.std) : 0;
+  const empGlobal = empThreshold(stAcq, stEvt);
   const empAccel  = stAccel.mean > 0 ? Math.max(stAcq.mean, stAccel.mean - stAcq.std) : null;
   const empFrein  = stFrein.mean > 0 ? Math.max(stAcq.mean, stFrein.mean - stAcq.std) : null;
   const empVirage = stVirage.mean > 0 ? Math.max(stAcq.mean, stVirage.mean - stAcq.std) : null;
@@ -533,6 +646,7 @@ function renderAnalyseSeuils() {
 
   // Distribution
   renderDistribution(acqNorms, evtNorms, empGlobal);
+  renderComparaison();
 }
 
 // ── Distribution ──────────────────────────────────────────────────────────────
@@ -611,6 +725,93 @@ function renderDistribution(acqNorms, evtNorms, empGlobal) {
       ctx2.restore();
     });
   };
+}
+
+// ── COMPARAISON SELON LES CONDITIONS ──────────────────────────────────────────
+const COND_LEVELS = {
+  affluence: ['Faible','Moyenne','Forte'],
+  meteo:     ['Soleil','Nuageux','Pluvieux','Orageux','Neige','Brouillard'],
+  trafic:    ['Faible','Moyen','Fort']
+};
+const COND_NAMES = { affluence:'affluence', meteo:'météo', trafic:'trafic' };
+let condChart = null;
+
+function renderComparaison() {
+  const panel = document.getElementById('panelConditions');
+  if (allSignalements.length === 0) { panel.style.display = 'none'; return; }
+  panel.style.display = '';
+
+  const dim = document.getElementById('condDim').value;
+  const useNG = currentUseNG();
+  const pick = s => (useNG && s.normNG !== null && s.normNG !== undefined) ? s.normNG : s.normBrut;
+  const valid = arr => arr.map(pick).filter(v => !isNaN(v) && v > 0);
+
+  const withCond = allSignalements.filter(s => s[dim]).length;
+  const excluded = allSignalements.length - withCond;
+  const note = document.getElementById('condNote');
+  const tableEl = document.getElementById('condTable');
+  const wrap = document.getElementById('condChartWrap');
+
+  if (withCond === 0) {
+    note.innerHTML = 'Aucun signalement des participants chargés n\'a de ' + COND_NAMES[dim] + ' renseignée (enregistrements antérieurs à l\'ajout de ces questions).';
+    tableEl.innerHTML = ''; wrap.style.display = 'none';
+    if (condChart) { condChart.destroy(); condChart = null; }
+    return;
+  }
+  wrap.style.display = '';
+  note.innerHTML = 'Les conditions sont déclarées <b>une fois par trajet</b>. Avec peu de trajets par niveau, les écarts restent indicatifs, et les conditions se recoupent (la pluie s\'accompagne souvent de trafic). '
+    + (useNG ? 'Méthode : accélération sans gravité.' : 'Méthode : accélération brute avec gravité (non recommandée pour comparer).')
+    + (excluded > 0 ? ' <b>' + excluded + ' signalement(s)</b> sans ' + COND_NAMES[dim] + ' renseignée sont exclus.' : '');
+
+  const rows = COND_LEVELS[dim].map(level => {
+    const evts = allSignalements.filter(s => s[dim] === level);
+    const acqs = allAcquisitions.filter(a => a[dim] === level);
+    const sess = allAcqSessions.filter(x => x[dim] === level);
+    const stE = stats(valid(evts));
+    const stA = stats(valid(acqs));
+    const thrType = t => { const stT = stats(valid(evts.filter(s => s.type === t))); return stT.mean > 0 ? Math.max(stA.mean, stT.mean - stA.std) : null; };
+    const durMin = sess.reduce((a, x) => a + (x.duration || 0), 0) / 60;
+    return {
+      level, nEvt: evts.length,
+      nSessions: new Set([...sess.map(x => x.sessionId), ...evts.map(s => s.sessionId)]).size,
+      durMin, rate: durMin > 0 ? evts.length / (durMin / 10) : null,
+      meanAcq: stA.n > 0 ? stA.mean : null, meanEvt: stE.n > 0 ? stE.mean : null,
+      seuil: empThreshold(stA, stE),
+      sAccel: thrType('Accélération'), sFrein: thrType('Freinage'), sVirage: thrType('Virage')
+    };
+  });
+
+  const f = (v, d) => (v === null || v === undefined || isNaN(v) || v <= 0) ? '—' : v.toFixed(d === undefined ? 3 : d);
+  const body = rows.map(r => `<tr class="${r.nEvt < 5 ? 'low' : ''}">
+      <td>${r.level}</td><td>${r.nSessions}</td><td>${r.nEvt}${r.nEvt > 0 && r.nEvt < 5 ? ' *' : ''}</td>
+      <td>${r.durMin > 0 ? r.durMin.toFixed(1) : '—'}</td><td>${r.rate === null ? '—' : r.rate.toFixed(1)}</td>
+      <td>${f(r.meanAcq)}</td><td>${f(r.meanEvt)}</td><td><b>${f(r.seuil)}</b></td>
+      <td>${f(r.sAccel)}</td><td>${f(r.sFrein)}</td><td>${f(r.sVirage)}</td></tr>`).join('');
+  tableEl.innerHTML = `<table class="cmp-table"><thead><tr>
+      <th>${COND_NAMES[dim].charAt(0).toUpperCase() + COND_NAMES[dim].slice(1)}</th><th>Trajets</th><th>Signalements</th><th>Durée (min)</th><th>Signal. / 10 min</th>
+      <th>Moy. fond (m/s²)</th><th>Moy. signal. (m/s²)</th><th>Seuil global</th><th>Seuil accél.</th><th>Seuil frein.</th><th>Seuil virage</th>
+    </tr></thead><tbody>${body}</tbody></table>
+    <div style="font-size:11px;color:var(--muted);margin-top:8px;">* moins de 5 signalements : valeurs peu fiables. Seuil empirique = max(moy. fond + 1 écart-type ; moy. signalements − 1 écart-type), calculé au sein de chaque niveau.</div>`;
+
+  if (condChart) condChart.destroy();
+  const ctx = document.getElementById('condChart').getContext('2d');
+  const num = v => (v === null || v === undefined || isNaN(v) || v <= 0) ? null : +v.toFixed(3);
+  condChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: rows.map(r => r.level),
+      datasets: [
+        { label: 'Moy. fond (acquisitions)', data: rows.map(r => num(r.meanAcq)), backgroundColor: 'rgba(26,86,219,0.35)', borderColor: 'rgba(26,86,219,0.8)', borderWidth: 1 },
+        { label: 'Moy. aux signalements', data: rows.map(r => num(r.meanEvt)), backgroundColor: 'rgba(192,57,43,0.5)', borderColor: 'rgba(192,57,43,0.9)', borderWidth: 1 },
+        { type: 'line', label: 'Seuil empirique global', data: rows.map(r => num(r.seuil)), borderColor: '#b45309', backgroundColor: '#b45309', showLine: false, pointRadius: 6, pointStyle: 'rectRot' }
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'top', labels: { font: { size: 11 } } } },
+      scales: { y: { beginAtZero: true, title: { display: true, text: 'm/s²', font: { size: 11 } } } }
+    }
+  });
 }
 
 // ── HEATMAP GPS ───────────────────────────────────────────────────────────────
