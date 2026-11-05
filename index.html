@@ -42,6 +42,7 @@
   .btn:disabled { opacity: .35; cursor: not-allowed; }
   .btn-start { background: var(--ok); border-color: var(--ok); color: #fff; font-weight: 600; }
   .btn-stop.on { border-color: var(--danger); color: var(--danger); }
+  @media (prefers-color-scheme: dark) { .btn-start, .btn-send { color: var(--bg); } }
   .btn-send { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; width: 100%; font-size: 15px; padding: 15px; border-radius: 10px; }
   .btn-event { flex-direction: column; gap: 5px; padding: 18px 8px; border-radius: 12px; }
   .btn-event .evt-label { font-size: 13px; font-weight: 600; }
@@ -84,6 +85,23 @@
   .choice-btn:active { opacity: .7; }
   .choice-btn.selected { background: var(--accent); border-color: var(--accent); color: var(--bg); font-weight: 600; }
   .choice-group.invalid .choice-btn:not(.selected) { border-color: var(--danger); }
+  #notices { display: flex; flex-direction: column; gap: 10px; }
+  #notices:empty { display: none; }
+  .notice { border: 1px solid var(--border); border-left-width: 5px; border-radius: 10px; padding: 12px 14px; background: var(--surface); font-size: 13px; line-height: 1.55; }
+  .notice.error { border-color: var(--danger); }
+  .notice.warn { border-color: var(--c-turn); }
+  .notice-title { font-weight: 600; font-size: 14px; margin-bottom: 4px; }
+  .notice ul { margin: 6px 0 0 18px; }
+  .notice li { margin-bottom: 3px; }
+  .overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; z-index: 1000; background: var(--bg); overflow-y: auto; display: none; align-items: flex-start; justify-content: center; padding: 24px 18px; }
+  .overlay.show { display: flex; }
+  .overlay-card { max-width: 520px; width: 100%; }
+  .overlay h2 { font-size: 19px; margin-bottom: 10px; }
+  .overlay p, .overlay li { font-size: 15px; line-height: 1.55; margin-bottom: 8px; }
+  .overlay ol { margin: 8px 0 16px 20px; }
+  .overlay .btn { width: 100%; margin-bottom: 10px; text-decoration: none; }
+  .btn-link { background: transparent; border-color: transparent; color: var(--muted); text-decoration: underline; font-size: 13px; }
+  .overlay .linkbox { width: 100%; padding: 10px 12px; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: ui-monospace, monospace; font-size: 12px; margin-bottom: 8px; }
   .prefilled-badge { display: inline-block; font-size: 11px; background: rgba(26,86,219,.1); color: var(--accent); border: 1px solid rgba(26,86,219,.3); border-radius: 5px; padding: 2px 8px; margin-left: 8px; font-weight: 500; }
   ::-webkit-scrollbar { width: 4px; height: 4px; }
   ::-webkit-scrollbar-track { background: transparent; }
@@ -91,11 +109,26 @@
 </style>
 </head>
 <body>
+<!-- Invitation à sortir du navigateur intégré d'une application (messagerie, réseaux sociaux) -->
+<div id="inAppOverlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="inAppTitle">
+  <div class="overlay-card">
+    <h2 id="inAppTitle">Ouvrez cette page dans votre navigateur</h2>
+    <p>Vous avez ouvert ce lien depuis une application (messagerie, réseau social). Le navigateur intégré à ces applications bloque souvent les capteurs de mouvement et le GPS, indispensables à l'étude.</p>
+    <ol id="inAppSteps"></ol>
+    <a id="btnOpenExternal" class="btn btn-send" href="#" style="display:none;">Ouvrir dans mon navigateur</a>
+    <button type="button" class="btn" id="btnCopyLink">Copier le lien</button>
+    <input type="text" id="linkBox" class="linkbox" readonly aria-label="Adresse de la page" />
+    <div id="copyFeedback" role="status" style="font-size:13px;color:var(--ok);min-height:1.3em;margin-bottom:10px;"></div>
+    <button type="button" class="btn btn-link" id="btnContinueAnyway">Continuer quand même dans ce navigateur</button>
+  </div>
+</div>
 <header>
   <div class="logo"><div class="rec-dot" id="recDot"></div>Bus Sensor Logger</div>
   <div class="badge" id="statusBadge">En attente</div>
 </header>
 <main>
+  <div id="notices" aria-live="polite"></div>
+
 
   <!-- Contrôles -->
   <div>
@@ -264,7 +297,14 @@ let lastAcc   = {x:null,y:null,z:null}; // avec gravité
 let lastAccNG = {x:null,y:null,z:null}; // sans gravité
 let lastGyr   = {x:null,y:null,z:null};
 let lastGPS   = {lat:null,lon:null,alt:null};
+let magSensor = null;                   // magnétomètre brut (seulement si le navigateur l'expose)
+let lastMag   = {x:null,y:null,z:null}; // champ magnétique en µT
+let lastCap   = null;                   // cap du téléphone en degrés (0 = nord), via l'orientation absolue
 let acquisitions = [], events = [];
+let motionDenied = false;                       // permission de mouvement refusée (iPhone)
+let wakeLock = null, wakeLockWanted = false;    // maintien de l'écran allumé
+let hiddenAt = null, interruptions = [];        // page quittée pendant l'enregistrement
+const noticeEls = {};
 let counts = {'Accélération':0,'Freinage':0,'Virage':0};
 
 // Estimation de la gravité par filtre passe-bas (uniquement si aucun capteur
@@ -286,6 +326,8 @@ function updateNG(ax, ay, az) {
 // ── Capteurs ──────────────────────────────────────────────────────────────────
 async function startSensors() {
   gravityEst = null; usingGenAcc = false; usingGenGyr = false; hasLin = false;
+  resetReadings(); motionDenied = false;
+  const waits = [];
 
   // Accélération linéaire (sans gravité) fournie par le système, en priorité
   if (window.LinearAccelerationSensor) {
@@ -322,25 +364,38 @@ async function startSensors() {
     } catch(e) { diag('Gyroscope indisponible'); }
   }
 
-  if (!usingGenAcc || !usingGenGyr) attachDeviceMotion();
+  // Magnétomètre brut (µT). Sur Chrome, la classe Magnetometer n'est pas toujours exposée :
+  // dans ce cas les colonnes MagX/Y/Z restent vides et seul le cap est enregistré.
+  lastMag = {x:null,y:null,z:null}; lastCap = null;
+  if (window.Magnetometer) {
+    try {
+      magSensor = new Magnetometer({frequency:20});
+      magSensor.addEventListener('reading', () => { lastMag.x=magSensor.x; lastMag.y=magSensor.y; lastMag.z=magSensor.z; });
+      magSensor.addEventListener('error', e => diag('Magnetometre erreur : ' + e.error.message));
+      magSensor.start(); diag('Magnetometre brut actif');
+    } catch(e) { magSensor = null; diag('Magnetometre brut indisponible : ' + e.message); }
+  } else diag('Magnetometre brut non expose par ce navigateur');
+  // iPhone : la demande de permission du mouvement (indispensable) part EN PREMIER, dans le geste de l'utilisateur
+  if (!usingGenAcc || !usingGenGyr) waits.push(attachDeviceMotion());
+  waits.push(attachOrientation());
 
+  // GPS : le suivi démarre tout de suite (avant, il ne démarrait qu'après un premier relevé réussi :
+  // un premier relevé lent à l'intérieur faisait perdre le GPS pour tout le trajet)
   if (navigator.geolocation) {
-    navigator.geolocation.getCurrentPosition(
-      pos => {
-        onGPS(pos); diag('GPS OK');
-        gpsWatchId = navigator.geolocation.watchPosition(onGPS, e => diag('GPS erreur : ' + e.message), {enableHighAccuracy:true, maximumAge:0, timeout:15000});
-      },
-      e => diag('GPS refuse : ' + e.message),
-      {enableHighAccuracy:true, timeout:15000}
-    );
+    gpsWatchId = navigator.geolocation.watchPosition(onGPS, onGPSError, {enableHighAccuracy:true, maximumAge:0, timeout:15000});
   } else diag('Geolocalisation non disponible');
+
+  await Promise.all(waits);   // attend la réponse de l'utilisateur aux demandes de permission
 }
 
 function attachDeviceMotion() {
   const attach = () => { window.addEventListener('devicemotion', onDeviceMotion, {passive:true}); diag('DeviceMotion actif'); };
   if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-    DeviceMotionEvent.requestPermission().then(r => { if (r === 'granted') attach(); else diag('Permission DeviceMotion refusee'); }).catch(e => diag('DeviceMotion erreur : ' + e.message));
-  } else attach();
+    return DeviceMotionEvent.requestPermission()
+      .then(r => { if (r === 'granted') attach(); else { motionDenied = true; diag('Permission DeviceMotion refusee'); } })
+      .catch(e => { motionDenied = true; diag('DeviceMotion erreur : ' + e.message); });
+  }
+  attach(); return Promise.resolve();
 }
 
 function onDeviceMotion(e) {
@@ -359,14 +414,144 @@ function onDeviceMotion(e) {
   }
 }
 
-function onGPS(pos) { lastGPS.lat=pos.coords.latitude; lastGPS.lon=pos.coords.longitude; lastGPS.alt=pos.coords.altitude; }
+// Cap (0-360 deg, 0 = nord magnétique) calculé depuis l'orientation absolue (accéléromètre + magnétomètre).
+// Téléphone plutôt à plat : direction du haut de l'appareil.
+// Téléphone plutôt debout : direction vers laquelle pointe l'arrière de l'appareil (formule de la spécification W3C).
+function headingFromOrientation(alpha, beta, gamma) {
+  const rad = Math.PI / 180;
+  if (Math.abs(beta) <= 45) return (((360 - alpha) % 360) + 360) % 360;
+  const x = beta * rad, y = gamma * rad, z = alpha * rad;
+  const cY = Math.cos(y), cZ = Math.cos(z), sX = Math.sin(x), sY = Math.sin(y), sZ = Math.sin(z);
+  const Vx = -cZ * sY - sZ * sX * cY;
+  const Vy = -sZ * sY + cZ * sX * cY;
+  if (Vx === 0 && Vy === 0) return null;
+  let h = Math.atan(Vx / Vy);
+  if (Vy < 0) h += Math.PI; else if (Vx < 0) h += 2 * Math.PI;
+  return h / rad;
+}
+
+function onOrientation(e) {
+  if (typeof e.webkitCompassHeading === 'number') { lastCap = e.webkitCompassHeading; return; }   // iOS
+  if (e.absolute === true || e.type === 'deviceorientationabsolute') {                            // Android
+    if (e.alpha !== null && e.beta !== null && e.gamma !== null) {
+      const h = headingFromOrientation(e.alpha, e.beta, e.gamma);
+      if (h !== null && !isNaN(h)) lastCap = h;
+    }
+  }
+}
+
+function attachOrientation() {
+  const attach = () => {
+    window.addEventListener('deviceorientationabsolute', onOrientation, {passive:true});
+    // Android : 'deviceorientation' est relatif (sans nord) -> on ne l'écoute que là où l'événement absolu n'existe pas (iOS)
+    if (!('ondeviceorientationabsolute' in window)) window.addEventListener('deviceorientation', onOrientation, {passive:true});
+    diag('Orientation absolue (cap) actif');
+  };
+  if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+    return DeviceOrientationEvent.requestPermission()
+      .then(r => { if (r === 'granted') attach(); else diag('Permission orientation refusee'); })
+      .catch(e => diag('Orientation erreur : ' + e.message));
+  }
+  attach(); return Promise.resolve();
+}
+
+function onGPS(pos) { lastGPS.lat=pos.coords.latitude; lastGPS.lon=pos.coords.longitude; lastGPS.alt=pos.coords.altitude; clearNotice('gps'); }
+function onGPSError(e) {
+  diag('GPS erreur : ' + e.message);
+  if (e.code === 1) {   // permission refusée (les simples délais dépassés ne déclenchent pas d'alerte : le suivi continue)
+    setNotice('gps', 'warn', "Position GPS non autorisée", "Sans GPS, vos signalements ne pourront pas être placés sur la carte.",
+      ["Autorisez la localisation pour ce site dans les réglages du navigateur.", "Puis arrêtez et relancez l'enregistrement."]);
+  }
+}
 
 function stopSensors() {
   window.removeEventListener('devicemotion', onDeviceMotion);
-  [accSensor, gyrSensor, linSensor].forEach(s => { if (s) { try { s.stop(); } catch(_) {} } });
-  accSensor = null; gyrSensor = null; linSensor = null;
+  window.removeEventListener('deviceorientationabsolute', onOrientation);
+  window.removeEventListener('deviceorientation', onOrientation);
+  [accSensor, gyrSensor, linSensor, magSensor].forEach(s => { if (s) { try { s.stop(); } catch(_) {} } });
+  accSensor = null; gyrSensor = null; linSensor = null; magSensor = null;
   if (gpsWatchId !== null) { navigator.geolocation.clearWatch(gpsWatchId); gpsWatchId = null; }
   usingGenAcc = false; usingGenGyr = false; hasLin = false;
+}
+
+// ── Messages au participant ───────────────────────────────────────────────────
+function setNotice(key, kind, title, intro, lines) {
+  clearNotice(key);
+  const el = document.createElement('div');
+  el.className = 'notice ' + kind;
+  el.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+  const t = document.createElement('div'); t.className = 'notice-title'; t.textContent = title; el.appendChild(t);
+  if (intro) { const p = document.createElement('div'); p.textContent = intro; el.appendChild(p); }
+  if (lines && lines.length) {
+    const ul = document.createElement('ul');
+    lines.forEach(l => { const li = document.createElement('li'); li.textContent = l; ul.appendChild(li); });
+    el.appendChild(ul);
+  }
+  $('notices').appendChild(el); noticeEls[key] = el;
+  if (kind === 'error' && el.scrollIntoView) el.scrollIntoView({behavior:'smooth', block:'center'});
+}
+function clearNotice(key) { if (noticeEls[key]) { noticeEls[key].remove(); delete noticeEls[key]; } }
+function clearNotices() { Object.keys(noticeEls).forEach(clearNotice); }
+
+function resetReadings() {
+  lastAcc.x = lastAcc.y = lastAcc.z = null;
+  lastAccNG.x = lastAccNG.y = lastAccNG.z = null;
+  lastGyr.x = lastGyr.y = lastGyr.z = null;
+  lastGPS.lat = lastGPS.lon = lastGPS.alt = null;
+  lastMag.x = lastMag.y = lastMag.z = null; lastCap = null;
+}
+
+// ── Écran maintenu allumé ─────────────────────────────────────────────────────
+async function requestWakeLock() {
+  if (!('wakeLock' in navigator)) return false;
+  try {
+    if (wakeLock) { try { wakeLock.release(); } catch(_) {} wakeLock = null; }
+    wakeLock = await navigator.wakeLock.request('screen');
+    if (wakeLock && wakeLock.addEventListener) wakeLock.addEventListener('release', () => { wakeLock = null; });
+    diag('Ecran maintenu allume');
+    return true;
+  } catch (e) { diag('Maintien de l\'ecran refuse : ' + e.message); return false; }
+}
+function releaseWakeLock() { wakeLockWanted = false; if (wakeLock) { try { wakeLock.release(); } catch(_) {} wakeLock = null; } }
+
+// ── Interruptions (écran verrouillé, changement d'application) ────────────────
+document.addEventListener('visibilitychange', () => {
+  if (!isRecording) return;
+  if (document.hidden) { hiddenAt = performance.now(); return; }
+  if (hiddenAt !== null) {
+    const dur = (performance.now() - hiddenAt) / 1000, at = (hiddenAt - startTime) / 1000;
+    hiddenAt = null;
+    if (dur >= 1) { interruptions.push({at: at, dur: dur}); showInterruptionNotice(); }
+  }
+  if (wakeLockWanted) requestWakeLock();   // le verrou est libéré automatiquement quand la page est masquée
+});
+function showInterruptionNotice() {
+  const total = interruptions.reduce((a, x) => a + x.dur, 0);
+  setNotice('interrupt', 'warn', "Enregistrement interrompu",
+    "La page a quitté l'écran (écran verrouillé ou changement d'application) " + interruptions.length + " fois, pendant " + Math.round(total) + " s au total. Aucune mesure n'a été enregistrée pendant ces interruptions.",
+    ["Gardez cette page ouverte et l'écran allumé jusqu'à la fin du trajet."]);
+}
+
+// ── Contrôle de la réception des données au démarrage ─────────────────────────
+async function waitForMotionData(timeoutMs, minMs) {
+  const t0 = performance.now();
+  while (true) {
+    const dt = performance.now() - t0, has = lastAcc.x !== null;
+    if (has && dt >= minMs) return true;
+    if (!has && motionDenied) return false;   // refus explicite : inutile d'attendre
+    if (dt >= timeoutMs) return has;
+    await sleep(50);
+  }
+}
+function showNoDataNotice() {
+  const lines = [];
+  if (!motionDenied) lines.push("Autorisez l'accès aux capteurs de mouvement si le téléphone vous le demande.");
+  lines.push("Ouvrez la page dans votre navigateur (Chrome, Safari, Firefox...) et non dans une application de messagerie.");
+  lines.push("Utilisez un téléphone : un ordinateur n'a pas ces capteurs.");
+  lines.push("Puis appuyez de nouveau sur Démarrer.");
+  setNotice('nodata', 'error', "Aucune donnée de mouvement reçue",
+    motionDenied ? "L'accès aux capteurs de mouvement a été refusé. Sur iPhone, fermez complètement Safari, rouvrez la page et acceptez l'accès quand le téléphone le demande. L'enregistrement n'a pas démarré."
+                 : "Aucune donnée n'est arrivée en 3 secondes : l'enregistrement n'a pas démarré.", lines);
 }
 
 // ── Enregistrement ────────────────────────────────────────────────────────────
@@ -381,22 +566,41 @@ function snapshot() {
 
 async function startRecording() {
   $('btnStart').disabled = true;
-  acquisitions = []; events = [];
+  clearNotices();
+  acquisitions = []; events = []; interruptions = []; hiddenAt = null;
   counts = {'Accélération':0,'Freinage':0,'Virage':0};
   ['cntAccel','cntBrake','cntTurn','totalEvt'].forEach(id => { $(id).textContent = '0'; });
   $('btnSend').disabled = true;
   $('sendStatus').style.display = 'none';
   resetConditions();
   sessionId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  $('statusBadge').textContent = 'Initialisation';
+
+  wakeLockWanted = true;
+  const wakeP = requestWakeLock();   // non attendu ici : ne retarde pas le démarrage
 
   diag('Demarrage des capteurs...');
-  await startSensors();
-  await sleep(600);
+  await startSensors();                          // attend la réponse aux demandes de permission (iPhone)
+  const gotData = await waitForMotionData(3000, 600);   // le délai de 3 s ne compte qu'APRES les permissions
+  if (!gotData) {
+    stopSensors(); releaseWakeLock(); clearNotices();
+    $('statusBadge').textContent = 'En attente';
+    showNoDataNotice();
+    $('btnStart').disabled = false;
+    return;
+  }
+
+  if (!(await wakeP)) {
+    setNotice('wake', 'warn', "Écran non maintenu allumé", "Votre navigateur ne peut pas garder l'écran allumé automatiquement.",
+      ["Désactivez le verrouillage automatique de l'écran (ou réglez-le sur la durée maximale) pendant le trajet.",
+       "Gardez cette page ouverte au premier plan : si l'écran s'éteint ou si vous changez d'application, l'enregistrement s'interrompt."]);
+  }
 
   startTime = performance.now(); isRecording = true;
   acqInterval = setInterval(() => {
-    if (!isRecording || lastAcc.x === null) return;
-    acquisitions.push(Object.assign({t: ((performance.now() - startTime) / 1000).toFixed(3)}, snapshot()));
+    if (!isRecording || document.hidden || lastAcc.x === null) return;   // pas de ligne tant que la page est masquée (capteurs à l'arrêt)
+    acquisitions.push(Object.assign({t: ((performance.now() - startTime) / 1000).toFixed(3)}, snapshot(),
+      {magX: fmtV(lastMag.x), magY: fmtV(lastMag.y), magZ: fmtV(lastMag.z), cap: lastCap === null ? null : lastCap.toFixed(1)}));
   }, 50);
 
   $('btnStop').disabled = false; $('btnStop').classList.add('on');
@@ -406,14 +610,14 @@ async function startRecording() {
 }
 
 function stopRecording() {
-  isRecording = false; clearInterval(acqInterval); stopSensors();
+  isRecording = false; clearInterval(acqInterval); stopSensors(); releaseWakeLock(); hiddenAt = null;
   diag('Arret - ' + acquisitions.length + ' echantillons, ' + events.length + ' signalements');
   $('btnStart').disabled = false;
   $('btnStop').disabled = true; $('btnStop').classList.remove('on');
   ['btnAccel','btnBrake','btnTurn'].forEach(id => { $(id).disabled = true; });
   $('recDot').classList.remove('on');
   $('statusBadge').textContent = 'Arrete'; $('statusBadge').classList.remove('on');
-  $('btnSend').disabled = acquisitions.length === 0 && events.length === 0;
+  $('btnSend').disabled = acquisitions.length === 0;   // jamais d'envoi sans mesures
 }
 
 function logEvent(type) {
@@ -439,8 +643,8 @@ function buildCSV(type) {
   // les positions des colonnes existantes ne changent pas.
   const cond = [conditions.affluence, conditions.meteo, conditions.trafic];
   if (type === 'acquisition') return toCSV(
-    ['Temps_s','AccX_ms2','AccY_ms2','AccZ_ms2','AccX_ng','AccY_ng','AccZ_ng','GyrX_degs','GyrY_degs','GyrZ_degs','Lat','Lon','Alt_m','Affluence','Meteo','Trafic'],
-    acquisitions.map(r => [r.t,r.accX,r.accY,r.accZ,r.accXng,r.accYng,r.accZng,r.gyrX,r.gyrY,r.gyrZ,r.lat,r.lon,r.alt,...cond]));
+    ['Temps_s','AccX_ms2','AccY_ms2','AccZ_ms2','AccX_ng','AccY_ng','AccZ_ng','GyrX_degs','GyrY_degs','GyrZ_degs','Lat','Lon','Alt_m','Affluence','Meteo','Trafic','MagX_uT','MagY_uT','MagZ_uT','Cap_deg'],
+    acquisitions.map(r => [r.t,r.accX,r.accY,r.accZ,r.accXng,r.accYng,r.accZng,r.gyrX,r.gyrY,r.gyrZ,r.lat,r.lon,r.alt,...cond,r.magX,r.magY,r.magZ,r.cap]));
   return toCSV(
     ['Temps_s','Type','AccX_ms2','AccY_ms2','AccZ_ms2','AccX_ng','AccY_ng','AccZ_ng','GyrX_degs','GyrY_degs','GyrZ_degs','Lat','Lon','Alt_m','Affluence','Meteo','Trafic'],
     events.map(r => [r.t,r.type,r.accX,r.accY,r.accZ,r.accXng,r.accYng,r.accZng,r.gyrX,r.gyrY,r.gyrZ,r.lat,r.lon,r.alt,...cond]));
@@ -464,6 +668,11 @@ async function sendResults() {
   const status = $('sendStatus'), btn = $('btnSend');
   const partInput = $('participantId'), ligneSelect = $('ligneSelect');
   const participant = partInput.value.trim(), ligne = ligneSelect.value;
+
+  if (acquisitions.length === 0) {
+    setNotice('nodata', 'error', "Aucune mesure à envoyer", "Aucune donnée de mouvement n'a été enregistrée : il n'y a rien à envoyer. Recommencez un enregistrement.", []);
+    return;
+  }
 
   let ok = true;
   if (!participant) { $('errParticipant').style.display='block'; partInput.style.borderColor='var(--danger)'; ok=false; } else { $('errParticipant').style.display='none'; partInput.style.borderColor=''; }
@@ -516,6 +725,53 @@ function resetConditions() {
 document.querySelectorAll('.choice-group').forEach(g => {
   g.querySelectorAll('.choice-btn').forEach(b => b.addEventListener('click', () => selectChoice(g, b)));
 });
+
+// ── Navigateur intégré à une application (messagerie, réseaux sociaux) ────────
+function detectInAppBrowser(ua, standalone) {
+  ua = ua || '';
+  if (/(FBAN|FBAV|FB_IAB|FBIOS|Instagram|Messenger|Snapchat|LinkedInApp|Twitter|TikTok|musical_ly|BytedanceWebview|\bLine\/|MicroMessenger|WhatsApp|Telegram|Pinterest|KAKAOTALK)/i.test(ua)) return true;
+  if (/Android/i.test(ua) && /; wv\)/.test(ua)) return true;                                   // WebView Android
+  if (/(iPhone|iPad|iPod)/.test(ua) && !/(Safari|CriOS|FxiOS|EdgiOS|OPiOS|GSA)/.test(ua) && !standalone) return true;   // WebView iOS
+  return false;
+}
+
+function setupInAppOverlay() {
+  const ua = navigator.userAgent || '';
+  if (!detectInAppBrowser(ua, navigator.standalone === true)) return;
+  const isAndroid = /Android/i.test(ua), url = location.href;
+
+  $('linkBox').value = url;
+  const steps = isAndroid
+    ? ["Appuyez sur « Ouvrir dans mon navigateur » ci-dessous.",
+       "Si rien ne se passe, ouvrez le menu de l'application (les trois points, en haut à droite) puis choisissez « Ouvrir dans Chrome » ou « Ouvrir dans le navigateur ».",
+       "Vous pouvez aussi copier le lien et le coller dans votre navigateur."]
+    : ["Ouvrez le menu de l'application (les trois points ou l'icône de partage, en haut ou en bas de l'écran).",
+       "Choisissez « Ouvrir dans Safari » ou « Ouvrir dans le navigateur ».",
+       "Vous pouvez aussi copier le lien et le coller dans Safari."];
+  steps.forEach(s => { const li = document.createElement('li'); li.textContent = s; $('inAppSteps').appendChild(li); });
+
+  if (isAndroid) {   // lien « intent » : demande à Android d'ouvrir l'adresse dans le navigateur par défaut
+    const u = new URL(url);
+    $('btnOpenExternal').href = 'intent://' + u.host + u.pathname + u.search + '#Intent;scheme=' + u.protocol.replace(':', '') + ';S.browser_fallback_url=' + encodeURIComponent(url) + ';end';
+    $('btnOpenExternal').style.display = 'flex';
+  }
+
+  $('btnCopyLink').addEventListener('click', async () => {
+    let ok = false;
+    try { if (navigator.clipboard && navigator.clipboard.writeText) { await navigator.clipboard.writeText(url); ok = true; } } catch(_) {}
+    if (!ok) { try { const box = $('linkBox'); box.focus(); box.select(); box.setSelectionRange(0, 99999); ok = document.execCommand('copy'); } catch(_) {} }
+    $('copyFeedback').textContent = ok ? "Lien copié. Collez-le dans votre navigateur." : "Copie impossible : touchez longuement l'adresse ci-dessus pour la copier.";
+  });
+  $('btnContinueAnyway').addEventListener('click', () => {
+    $('inAppOverlay').classList.remove('show');
+    document.querySelector('main').removeAttribute('aria-hidden');
+  });
+
+  document.querySelector('main').setAttribute('aria-hidden', 'true');
+  $('inAppOverlay').classList.add('show');
+  (isAndroid ? $('btnOpenExternal') : $('btnCopyLink')).focus();
+}
+setupInAppOverlay();
 </script>
 </body>
 </html>
