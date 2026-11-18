@@ -44,6 +44,12 @@
   .legend-item{display:flex;align-items:center;gap:6px;}
   .legend-dot{width:12px;height:12px;border-radius:50%;border:2px solid white;box-shadow:0 0 0 1px rgba(0,0,0,.2);}
   #map{height:480px;}
+  .trace-bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:10px 18px;border-bottom:1px solid var(--border);font-size:12px;}
+  .trace-bar .tb-label{color:var(--muted);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;}
+  .trace-chip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:16px;border:1.5px solid var(--border);background:var(--surface2);color:var(--text);font-family:inherit;font-size:12px;cursor:pointer;}
+  .trace-chip .sw{width:18px;height:5px;border-radius:3px;}
+  .trace-chip.off{opacity:.55;text-decoration:line-through;}
+  .trace-chip .state{font-weight:600;}
   .detail-panel{display:none;padding:16px 18px;border-top:1px solid var(--border);}
   .detail-panel.visible{display:block;}
   .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
@@ -135,8 +141,10 @@
         <div class="legend-item"><div class="legend-dot" style="background:var(--c-accel)"></div> Accélération</div>
         <div class="legend-item"><div class="legend-dot" style="background:var(--c-brake)"></div> Freinage</div>
         <div class="legend-item"><div class="legend-dot" style="background:var(--c-turn)"></div> Virage</div>
+        <label class="legend-item" style="cursor:pointer;margin-left:8px;"><input type="checkbox" id="toggleTraces" checked onchange="renderTraces()"/> Afficher le tracé des lignes</label>
       </div>
     </div>
+    <div id="traceBar" class="trace-bar" style="display:none;"></div>
     <div id="map"></div>
     <div class="detail-panel" id="detailPanel">
       <div class="detail-title" id="detailTitle"></div>
@@ -158,7 +166,7 @@
           <option value="Freinage">Freinage</option>
           <option value="Virage">Virage</option>
         </select>
-        <select id="filterLigne" onchange="filterSignalements()"><option value="">Toutes les lignes</option></select>
+        <select id="filterLigne" onchange="onLigneChange()" aria-label="Ligne"><option value="">Toutes les lignes</option></select>
         <select id="filterSession" onchange="filterSignalements()"><option value="">Toutes les sessions</option></select>
         <select id="filterParticipant" onchange="filterSignalements()"><option value="">Tous les participants</option></select>
         <select id="filterAffluence" onchange="filterSignalements()" aria-label="Affluence"><option value="">Toute affluence</option><option value="Faible">Affluence faible</option><option value="Moyenne">Affluence moyenne</option><option value="Forte">Affluence forte</option></select>
@@ -213,6 +221,7 @@
           <option value="affluence">Affluence</option>
           <option value="meteo">Météo</option>
           <option value="trafic">Trafic</option>
+          <option value="ligne">Ligne de bus</option>
         </select>
       </div>
     </div>
@@ -272,10 +281,11 @@ let allSignalements = [], allAcquisitions = [], allAcqSessions = [], filteredSig
 let markers = [], heatCircles = [];
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
-function sessionLabel(participant, createdAt) {
-  if (!createdAt) return participant;
+function sessionLabel(participant, createdAt, ligne) {
+  const base = participant + (ligne ? ' · ligne ' + ligne : '');
+  if (!createdAt) return base;
   const d = new Date(createdAt);
-  return participant + ' – ' + d.toLocaleDateString('fr-FR') + ' ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'});
+  return base + ' – ' + d.toLocaleDateString('fr-FR') + ' ' + d.toLocaleTimeString('fr-FR', {hour:'2-digit',minute:'2-digit'});
 }
 function getSessionColor(sessionId, participant) {
   const key = sessionId || participant;
@@ -333,13 +343,14 @@ async function loadSelected() {
       for (const row of rows1) for (const s of parseEventsCSV(row.contenu, row)) allSignalements.push(s);
 
       // Acquisitions (pour la distribution)
-      const r2 = await fetch(SUPA_URL + '/rest/v1/resultats?select=contenu,participant,session_id,created_at,affluence,meteo,trafic&participant=eq.' + encodeURIComponent(p) + '&type=eq.acquisition',
+      const r2 = await fetch(SUPA_URL + '/rest/v1/resultats?select=contenu,participant,ligne,session_id,created_at,affluence,meteo,trafic&participant=eq.' + encodeURIComponent(p) + '&type=eq.acquisition',
         { headers: { 'Authorization':'Bearer '+SUPA_ANON, 'apikey':SUPA_ANON } });
       const rows2 = await r2.json();
       for (const row of rows2) {
         const parsed = parseAcqCSV(row.contenu, row);
         for (const s of parsed.samples) allAcquisitions.push(s);   // boucle : push(...tableau) dépasse la limite d'arguments sur les longs trajets
-        allAcqSessions.push({sessionId: parsed.sessionId, duration: parsed.duration, affluence: row.affluence || '', meteo: row.meteo || '', trafic: row.trafic || ''});
+        allAcqSessions.push({sessionId: parsed.sessionId, participant: row.participant, ligne: parsed.ligne, sessionLabel: sessionLabel(row.participant, row.created_at, parsed.ligne),
+                             duration: parsed.duration, track: parsed.track, affluence: row.affluence || '', meteo: row.meteo || '', trafic: row.trafic || ''});
       }
     } catch(e) { console.error(p, e); }
   }
@@ -347,15 +358,42 @@ async function loadSelected() {
   // Filtres
   const sel = document.getElementById('filterParticipant');
   sel.innerHTML = '<option value="">Tous les participants</option>' + list.map(p=>`<option value="${p}">${p}</option>`).join('');
-  const lignes = [...new Set(allSignalements.map(s=>s.ligne).filter(Boolean))].sort();
-  document.getElementById('filterLigne').innerHTML = '<option value="">Toutes les lignes</option>' + lignes.map(l=>`<option value="${l}">${l}</option>`).join('');
-  const sessions = [...new Map(allSignalements.map(s=>[s.sessionId,s])).values()].sort((a,b)=>a.participant.localeCompare(b.participant));
-  document.getElementById('filterSession').innerHTML = '<option value="">Toutes les sessions</option>' + sessions.map(s=>`<option value="${s.sessionId}">${s.sessionLabel}</option>`).join('');
+  const lignes = allLignes();
+  document.getElementById('filterLigne').innerHTML = '<option value="">Toutes les lignes</option>' + lignes.map(l=>`<option value="${l}">Ligne ${l}</option>`).join('');
+  refreshSessionOptions();
 
   filterSignalements();
   renderAnalyseSeuils();
   renderHeatmap();
   document.getElementById('btnLoad').disabled = false;
+}
+
+// ── Lignes de bus : listes, périmètre, sessions ───────────────────────────────
+function allLignes() {
+  return [...new Set([...allSignalements.map(s=>s.ligne), ...allAcqSessions.map(x=>x.ligne)].filter(Boolean))]
+    .sort((a,b)=>a.localeCompare(b,'fr',{numeric:true}));
+}
+function selectedLigne() { const el = document.getElementById('filterLigne'); return el ? el.value : ''; }
+// Périmètre « ligne » : appliqué aux seuils, à la comparaison et aux zones fréquentes
+function scopeEvt()  { const l = selectedLigne(); return l ? allSignalements.filter(s => s.ligne === l) : allSignalements; }
+function scopeAcq()  { const l = selectedLigne(); return l ? allAcquisitions.filter(s => s.ligne === l) : allAcquisitions; }
+function scopeSess() { const l = selectedLigne(); return l ? allAcqSessions.filter(s => s.ligne === l) : allAcqSessions; }
+
+// Liste des sessions : celles qui ont des signalements ou des acquisitions, restreintes à la ligne choisie
+function refreshSessionOptions() {
+  const l = selectedLigne(), el = document.getElementById('filterSession'), cur = el.value;
+  const map_ = new Map();
+  allSignalements.forEach(s => { if (!l || s.ligne === l) map_.set(s.sessionId, {participant:s.participant, label:s.sessionLabel}); });
+  allAcqSessions.forEach(x => { if ((!l || x.ligne === l) && !map_.has(x.sessionId)) map_.set(x.sessionId, {participant:x.participant, label:x.sessionLabel}); });
+  const list = [...map_.entries()].sort((a,b) => a[1].participant.localeCompare(b[1].participant) || a[1].label.localeCompare(b[1].label));
+  el.innerHTML = '<option value="">Toutes les sessions</option>' + list.map(([id,v]) => `<option value="${id}">${v.label}</option>`).join('');
+  if (map_.has(cur)) el.value = cur;
+}
+function onLigneChange() {
+  refreshSessionOptions();
+  filterSignalements();
+  renderAnalyseSeuils();
+  renderHeatmap();
 }
 
 // ── Parse CSV signalements ────────────────────────────────────────────────────
@@ -375,7 +413,7 @@ function parseEventsCSV(csv, row) {
   const num = (cols, n) => { const i = ix(n); return i < 0 ? NaN : parseFloat(cols[i]); };
   const txt = (cols, n) => { const i = ix(n); return (i < 0 || cols[i] === undefined) ? '' : cols[i].trim(); };
   const sid = row.session_id || (participant + '_' + (createdAt ? createdAt.slice(0,16) : 'unknown'));
-  const label = sessionLabel(participant, createdAt);
+  const ligneEv = row.ligne || '';
   return lines.slice(1).map(line => {
     const cols = line.replace(/\r/g,'').split(',');
     const type = txt(cols, 'Type');
@@ -384,7 +422,7 @@ function parseEventsCSV(csv, row) {
     const lat = num(cols,'Lat'), lon = num(cols,'Lon');
     const ngOk = !isNaN(accXng) && !isNaN(accYng) && !isNaN(accZng);
     return {
-      participant, ligne: row.ligne || '', sessionId: sid, sessionLabel: label,
+      participant, ligne: ligneEv || txt(cols,'Ligne'), sessionId: sid, sessionLabel: sessionLabel(participant, createdAt, ligneEv || txt(cols,'Ligne')),
       temps: txt(cols,'Temps_s'), type,
       accX, accY, accZ, accXng, accYng, accZng,
       gyrX: num(cols,'GyrX_degs'), gyrY: num(cols,'GyrY_degs'), gyrZ: num(cols,'GyrZ_degs'),
@@ -402,14 +440,25 @@ function parseEventsCSV(csv, row) {
 function parseAcqCSV(csv, row) {
   const lines = csv.trim().split('\n');
   const sid = row.session_id || (row.participant + '_' + (row.created_at ? row.created_at.slice(0,16) : 'unknown'));
-  if (lines.length < 2) return {samples: [], duration: 0, sessionId: sid};
+  if (lines.length < 2) return {samples: [], duration: 0, sessionId: sid, ligne: row.ligne || '', track: []};
   const h = csvHeader(lines[0]);
+  const iLat = h.indexOf('Lat'), iLon = h.indexOf('Lon'), iLig = h.indexOf('Ligne');
   const iT = h.indexOf('Temps_s'), iX = h.indexOf('AccX_ms2'), iY = h.indexOf('AccY_ms2'), iZ = h.indexOf('AccZ_ms2');
   const iXn = h.indexOf('AccX_ng'), iYn = h.indexOf('AccY_ng'), iZn = h.indexOf('AccZ_ng');
   const aff = row.affluence || '', met = row.meteo || '', tra = row.trafic || '';
   const samples = [];
+  const track = [];            // tracé GPS de la session (un point au minimum tous les ~8 m)
+  let ligneCsv = '';
   for (let k = 1; k < lines.length; k++) {
     const cols = lines[k].replace(/\r/g,'').split(',');
+    if (!ligneCsv && iLig >= 0 && cols[iLig] && cols[iLig].trim()) ligneCsv = cols[iLig].trim();
+    if (iLat >= 0 && iLon >= 0) {
+      const la = parseFloat(cols[iLat]), lo = parseFloat(cols[iLon]);
+      if (!isNaN(la) && !isNaN(lo) && !(la === 0 && lo === 0)) {
+        const last = track[track.length-1];
+        if (!last || distanceM(last[0], last[1], la, lo) >= 8) track.push([la, lo]);
+      }
+    }
     const x = parseFloat(cols[iX]), y = parseFloat(cols[iY]), z = parseFloat(cols[iZ]);
     if (isNaN(x) && isNaN(y) && isNaN(z)) continue;
     let normNG = null;
@@ -418,10 +467,12 @@ function parseAcqCSV(csv, row) {
       if (!isNaN(xn) && !isNaN(yn) && !isNaN(zn)) normNG = Math.sqrt(xn*xn + yn*yn + zn*zn);
     }
     samples.push({normBrut: Math.sqrt((x||0)**2 + (y||0)**2 + (z||0)**2), normNG, hasNG: normNG !== null,
-                  sessionId: sid, affluence: aff, meteo: met, trafic: tra});
+                  sessionId: sid, ligne: row.ligne || ligneCsv, affluence: aff, meteo: met, trafic: tra});
   }
   const lastT = parseFloat(lines[lines.length-1].replace(/\r/g,'').split(',')[iT]);
-  return {samples, duration: isNaN(lastT) ? 0 : lastT, sessionId: sid};
+  const ligneFinal = row.ligne || ligneCsv;
+  samples.forEach(sm => { sm.ligne = ligneFinal; });
+  return {samples, duration: isNaN(lastT) ? 0 : lastT, sessionId: sid, ligne: ligneFinal, track};
 }
 
 // ── Filtrage ──────────────────────────────────────────────────────────────────
@@ -436,7 +487,7 @@ function filterSignalements() {
   filteredSignalements = allSignalements.filter(r =>
     (!type||r.type===type)&&(!part||r.participant===part)&&(!ligne||r.ligne===ligne)&&(!session||r.sessionId===session)&&
     (!aff||r.affluence===aff)&&(!met||r.meteo===met)&&(!tra||r.trafic===tra));
-  renderMarkers(); renderTable();
+  renderMarkers(); renderTraces(); renderTable();
 }
 
 // ── Marqueurs carte ───────────────────────────────────────────────────────────
@@ -461,6 +512,57 @@ function renderMarkers() {
   });
   if(bounds.length>1) map.fitBounds(bounds,{padding:[40,40]});
   else if(bounds.length===1) map.setView(bounds[0],15);
+}
+
+// ── Tracés des lignes (GPS des sessions) ──────────────────────────────────────
+const LINE_PALETTE = ['#0f766e','#9333ea','#ca8a04','#e11d48','#2563eb','#16a34a','#ea580c','#0891b2','#be185d','#4d7c0f','#7c3aed','#b45309'];
+let lineColorMap = {}, traceLayer = null, traceHidden = new Set();
+function lineColor(l) {
+  const k = l || '?';
+  if (!lineColorMap[k]) lineColorMap[k] = LINE_PALETTE[Object.keys(lineColorMap).length % LINE_PALETTE.length];
+  return lineColorMap[k];
+}
+// Sessions visibles = mêmes filtres que le tableau (participant, ligne, session, conditions)
+function sessionsForTraces() {
+  const part=document.getElementById('filterParticipant').value, ligne=selectedLigne(), session=document.getElementById('filterSession').value;
+  const aff=document.getElementById('filterAffluence').value, met=document.getElementById('filterMeteo').value, tra=document.getElementById('filterTrafic').value;
+  return allAcqSessions.filter(x => (!part||x.participant===part)&&(!ligne||x.ligne===ligne)&&(!session||x.sessionId===session)&&
+    (!aff||x.affluence===aff)&&(!met||x.meteo===met)&&(!tra||x.trafic===tra));
+}
+function toggleTraceLine(l) { if (traceHidden.has(l)) traceHidden.delete(l); else traceHidden.add(l); renderTraces(); }
+function renderTraces() {
+  if (!map) return;
+  if (traceLayer) { map.removeLayer(traceLayer); traceLayer = null; }
+  const bar = document.getElementById('traceBar');
+  const on = document.getElementById('toggleTraces').checked;
+  const sessions = sessionsForTraces();
+  if (!on || sessions.length === 0) { bar.style.display = 'none'; bar.innerHTML = ''; return; }
+
+  // Une pastille par ligne, cliquable pour afficher / masquer son tracé
+  const byLine = {};
+  sessions.forEach(x => { const k = x.ligne || ''; (byLine[k] = byLine[k] || []).push(x); });
+  const keys = Object.keys(byLine).sort((a,b)=>a.localeCompare(b,'fr',{numeric:true}));
+  const noGps = sessions.filter(x => x.track.length < 2).length;
+  bar.innerHTML = '<span class="tb-label">Tracés</span>' + keys.map(k => {
+    const off = traceHidden.has(k), n = byLine[k].length;
+    return `<button type="button" class="trace-chip ${off?'off':''}" onclick="toggleTraceLine(${JSON.stringify(k).replace(/"/g,'&quot;')})" aria-pressed="${!off}">`
+         + `<span class="sw" style="background:${lineColor(k)}"></span>${k ? 'Ligne ' + k : 'Ligne non renseignée'} · ${n} session${n>1?'s':''}`
+         + ` <span class="state">${off?'masquée':'affichée'}</span></button>`;
+  }).join('') + (noGps ? `<span style="color:var(--muted);">${noGps} session(s) sans position GPS</span>` : '');
+  bar.style.display = '';
+
+  traceLayer = L.featureGroup().addTo(map);
+  const pts = [];
+  sessions.forEach(x => {
+    if (traceHidden.has(x.ligne || '') || x.track.length < 2) return;
+    const col = lineColor(x.ligne);
+    const pl = L.polyline(x.track, { color: col, weight: 5, opacity: 0.75, lineJoin: 'round' }).addTo(traceLayer);
+    pl.bindTooltip((x.ligne ? 'Ligne ' + x.ligne : 'Ligne non renseignée') + ' · ' + x.sessionLabel, { sticky: true });
+    L.circleMarker(x.track[0], { radius: 5, color: '#fff', weight: 2, fillColor: col, fillOpacity: 1 }).bindTooltip('Départ · ' + x.sessionLabel).addTo(traceLayer);
+    x.track.forEach(q => pts.push(q));
+  });
+  // Sans signalement géolocalisé à afficher, on cadre la carte sur les tracés
+  if (pts.length > 1 && markers.filter(Boolean).length === 0) map.fitBounds(pts, { padding: [40, 40] });
 }
 
 // ── Détail au clic ────────────────────────────────────────────────────────────
@@ -533,9 +635,17 @@ function empThreshold(stAcq, stEvt) {
 function renderAnalyseSeuils() {
   if(allSignalements.length===0) return;
   document.getElementById('panelSeuils').style.display='';
+  const evtS = scopeEvt(), acqS = scopeAcq(), ligneSel = selectedLigne();
+  if(evtS.length===0) {
+    document.getElementById('seuilsGrid').innerHTML = '<div class="empty" style="grid-column:1/-1;">Aucun signalement sur la ligne ' + ligneSel + '.</div>';
+    document.getElementById('seuilsInfo').textContent = '';
+    if(distChart) { distChart.destroy(); distChart = null; }
+    renderComparaison();
+    return;
+  }
 
   const useNG = document.getElementById('methodeCalc').value === 'ng';
-  const hasNGData = allSignalements.some(s=>s.hasNG) && allAcquisitions.some(s=>s.hasNG);
+  const hasNGData = evtS.some(s=>s.hasNG) && acqS.some(s=>s.hasNG);
 
   // Note méthodologique
   const noteEl = document.getElementById('methodeNote');
@@ -550,20 +660,20 @@ function renderAnalyseSeuils() {
     noteEl.style.borderLeftColor = 'var(--danger)';
   }
 
-  const acqNorms = allAcquisitions.map(s => {
+  const acqNorms = acqS.map(s => {
     if(useNG && s.normNG !== null) return s.normNG;
     return s.normBrut;
   }).filter(v=>!isNaN(v)&&v>0);
 
-  const evtNorms = allSignalements.map(s => {
+  const evtNorms = evtS.map(s => {
     if(useNG && s.normNG !== null) return s.normNG;
     return s.normBrut;
   }).filter(v=>!isNaN(v)&&v>0);
   const stAcq = stats(acqNorms);
   const stEvt = stats(evtNorms);
-  const stAccel = statsBy(allSignalements,'Accélération',useNG);
-  const stFrein = statsBy(allSignalements,'Freinage',useNG);
-  const stVirage = statsBy(allSignalements,'Virage',useNG);
+  const stAccel = statsBy(evtS,'Accélération',useNG);
+  const stFrein = statsBy(evtS,'Freinage',useNG);
+  const stVirage = statsBy(evtS,'Virage',useNG);
 
   // Seuil empirique = moy signalements - 1 écart-type acquisitions
   const empGlobal = empThreshold(stAcq, stEvt);
@@ -572,7 +682,7 @@ function renderAnalyseSeuils() {
   const empVirage = stVirage.mean > 0 ? Math.max(stAcq.mean, stVirage.mean - stAcq.std) : null;
 
   document.getElementById('seuilsInfo').textContent =
-    stAcq.n + ' acquisitions · ' + evtNorms.length + ' signalements avec données';
+    (ligneSel ? 'Ligne ' + ligneSel + ' · ' : 'Toutes lignes · ') + stAcq.n + ' acquisitions · ' + evtNorms.length + ' signalements avec données';
 
   // Niveau ISO de la moyenne signalements
   function isoLevel(val) {
@@ -733,7 +843,8 @@ const COND_LEVELS = {
   meteo:     ['Soleil','Nuageux','Pluvieux','Orageux','Neige','Brouillard'],
   trafic:    ['Faible','Moyen','Fort']
 };
-const COND_NAMES = { affluence:'affluence', meteo:'météo', trafic:'trafic' };
+const COND_NAMES = { affluence:'affluence', meteo:'météo', trafic:'trafic', ligne:'ligne' };
+function condLevels(dim) { return dim === 'ligne' ? allLignes() : COND_LEVELS[dim]; }
 let condChart = null;
 
 function renderComparaison() {
@@ -742,31 +853,35 @@ function renderComparaison() {
   panel.style.display = '';
 
   const dim = document.getElementById('condDim').value;
+  // Comparer les lignes entre elles : on ne restreint pas à une seule ligne
+  const baseEvt = dim === 'ligne' ? allSignalements : scopeEvt();
+  const baseAcq = dim === 'ligne' ? allAcquisitions : scopeAcq();
+  const baseSess = dim === 'ligne' ? allAcqSessions : scopeSess();
   const useNG = currentUseNG();
   const pick = s => (useNG && s.normNG !== null && s.normNG !== undefined) ? s.normNG : s.normBrut;
   const valid = arr => arr.map(pick).filter(v => !isNaN(v) && v > 0);
 
-  const withCond = allSignalements.filter(s => s[dim]).length;
-  const excluded = allSignalements.length - withCond;
+  const withCond = baseEvt.filter(s => s[dim]).length;
+  const excluded = baseEvt.length - withCond;
   const note = document.getElementById('condNote');
   const tableEl = document.getElementById('condTable');
   const wrap = document.getElementById('condChartWrap');
 
   if (withCond === 0) {
-    note.innerHTML = 'Aucun signalement des participants chargés n\'a de ' + COND_NAMES[dim] + ' renseignée (enregistrements antérieurs à l\'ajout de ces questions).';
+    note.innerHTML = 'Aucun signalement des participants chargés n\'a de ' + COND_NAMES[dim] + ' renseignée (enregistrements antérieurs à l\'ajout de cette question).';
     tableEl.innerHTML = ''; wrap.style.display = 'none';
     if (condChart) { condChart.destroy(); condChart = null; }
     return;
   }
   wrap.style.display = '';
-  note.innerHTML = 'Les conditions sont déclarées <b>une fois par trajet</b>. Avec peu de trajets par niveau, les écarts restent indicatifs, et les conditions se recoupent (la pluie s\'accompagne souvent de trafic). '
+  note.innerHTML = 'Les conditions et la ligne sont déclarées <b>une fois par trajet</b>. Avec peu de trajets par niveau, les écarts restent indicatifs, et les conditions se recoupent (la pluie s\'accompagne souvent de trafic). '
     + (useNG ? 'Méthode : accélération sans gravité.' : 'Méthode : accélération brute avec gravité (non recommandée pour comparer).')
     + (excluded > 0 ? ' <b>' + excluded + ' signalement(s)</b> sans ' + COND_NAMES[dim] + ' renseignée sont exclus.' : '');
 
-  const rows = COND_LEVELS[dim].map(level => {
-    const evts = allSignalements.filter(s => s[dim] === level);
-    const acqs = allAcquisitions.filter(a => a[dim] === level);
-    const sess = allAcqSessions.filter(x => x[dim] === level);
+  const rows = condLevels(dim).map(level => {
+    const evts = baseEvt.filter(s => s[dim] === level);
+    const acqs = baseAcq.filter(a => a[dim] === level);
+    const sess = baseSess.filter(x => x[dim] === level);
     const stE = stats(valid(evts));
     const stA = stats(valid(acqs));
     const thrType = t => { const stT = stats(valid(evts.filter(s => s.type === t))); return stT.mean > 0 ? Math.max(stA.mean, stT.mean - stA.std) : null; };
@@ -828,7 +943,7 @@ function updateCluster() {
   heatCircles.forEach(c => heatmapMap.removeLayer(c));
   heatCircles = [];
 
-  const points = allSignalements.filter(s => s.hasGps && (!type || s.type === type));
+  const points = scopeEvt().filter(s => s.hasGps && (!type || s.type === type));
   if(points.length === 0) { document.getElementById('hotspotList').innerHTML = '<div class="empty">Aucun signalement avec coordonnées GPS.</div>'; return; }
 
   // Clustering simple : regrouper les points à moins de "radius" mètres

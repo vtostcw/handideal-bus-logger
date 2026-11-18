@@ -98,6 +98,7 @@
           <option value="Moyenne">Affluence moyenne</option>
           <option value="Forte">Affluence forte</option>
         </select>
+        <select id="ligneFilter" onchange="filterTable()" aria-label="Filtrer par ligne"><option value="">Toutes les lignes</option></select>
         <select id="meteoFilter" onchange="filterTable()" aria-label="Filtrer par météo">
           <option value="">Toute météo</option>
           <option value="Soleil">Soleil</option>
@@ -118,7 +119,7 @@
           <option value="acquisition">Acquisitions</option>
           <option value="events">Signalements</option>
         </select>
-        <button class="btn btn-ok" id="btnDlAll" onclick="downloadAll()" disabled>Tout télécharger</button>
+        <button class="btn btn-ok" id="btnDlAll" onclick="downloadAll()" disabled>Télécharger la sélection</button>
       </div>
     </div>
     <div id="tableContainer"><div class="loading"><div class="spinner"></div> Chargement…</div></div>
@@ -141,13 +142,20 @@ async function loadData() {
       {headers:{'Authorization':'Bearer '+SUPA_ANON,'apikey':SUPA_ANON}});
     if(!res.ok) throw new Error('HTTP '+res.status);
     allRows=await res.json();
-    updateStats(); filterTable();
+    fillLigneFilter(); updateStats(); filterTable();
     document.getElementById('statusBar').textContent='Mis à jour : '+new Date().toLocaleTimeString('fr');
-    document.getElementById('btnDlAll').disabled=allRows.length===0;
+    
   } catch(e) {
     document.getElementById('tableContainer').innerHTML='<div class="empty">Erreur : '+e.message+'</div>';
     document.getElementById('statusBar').textContent='Erreur';
   }
+}
+
+function fillLigneFilter() {
+  const sel=document.getElementById('ligneFilter'), cur=sel.value;
+  const lignes=[...new Set(allRows.map(r=>r.ligne).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'fr',{numeric:true}));
+  sel.innerHTML='<option value="">Toutes les lignes</option>'+lignes.map(l=>'<option value="'+l.replace(/"/g,'&quot;')+'">Ligne '+l+'</option>').join('');
+  if(lignes.includes(cur)) sel.value=cur;
 }
 
 function updateStats() {
@@ -164,7 +172,10 @@ function filterTable() {
   const aff=document.getElementById('affluenceFilter').value;
   const met=document.getElementById('meteoFilter').value;
   const tra=document.getElementById('traficFilter').value;
-  filteredRows=allRows.filter(r=>(!search||(r.participant&&r.participant.toLowerCase().includes(search)))&&(!type||r.type===type)&&(!aff||r.affluence===aff)&&(!met||r.meteo===met)&&(!tra||r.trafic===tra));
+  const lig=document.getElementById('ligneFilter').value;
+  filteredRows=allRows.filter(r=>(!lig||r.ligne===lig)&&(!search||(r.participant&&r.participant.toLowerCase().includes(search)))&&(!type||r.type===type)&&(!aff||r.affluence===aff)&&(!met||r.meteo===met)&&(!tra||r.trafic===tra));
+  document.getElementById('btnDlAll').textContent='Télécharger la sélection ('+filteredRows.length+')';
+  document.getElementById('btnDlAll').disabled=filteredRows.length===0;
   renderTable();
 }
 
@@ -192,12 +203,23 @@ function renderTable() {
   </table></div>`;
 }
 
+// Garantit une colonne Ligne dans le CSV (les anciens fichiers n'en ont pas : on la complète depuis la base).
+function withLigne(csv,ligne) {
+  if(!csv) return csv;
+  const lines=csv.split(/\r?\n/);
+  const hdr=lines[0].replace(/^\uFEFF/,'').split(',').map(x=>x.trim());
+  if(hdr.indexOf('Ligne')>=0) return csv;
+  const v=ligne||'';
+  const cell=/[",]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;
+  return lines.map((l,i)=>l===''?l:(i===0?l+',Ligne':l+','+cell)).join('\r\n');
+}
+
 async function downloadOne(id,filename) {
   try {
-    const res=await fetch(SUPA_URL+'/rest/v1/resultats?id=eq.'+id+'&select=contenu,filename',{headers:{'Authorization':'Bearer '+SUPA_ANON,'apikey':SUPA_ANON}});
+    const res=await fetch(SUPA_URL+'/rest/v1/resultats?id=eq.'+id+'&select=contenu,filename,ligne',{headers:{'Authorization':'Bearer '+SUPA_ANON,'apikey':SUPA_ANON}});
     const data=await res.json();
     if(!data||data.length===0) throw new Error('Données introuvables');
-    triggerDownload(data[0].contenu,data[0].filename);
+    triggerDownload(withLigne(data[0].contenu,data[0].ligne),data[0].filename);
   } catch(e){alert('Erreur : '+e.message);}
 }
 
@@ -205,16 +227,21 @@ async function downloadAll() {
   document.getElementById('btnDlAll').disabled=true;
   document.getElementById('statusBar').textContent='Téléchargement…';
   try {
-    const res=await fetch(SUPA_URL+'/rest/v1/resultats?select=contenu,filename,participant,type&order=participant.asc,created_at.asc',{headers:{'Authorization':'Bearer '+SUPA_ANON,'apikey':SUPA_ANON}});
-    const data=await res.json();
+    const ids=filteredRows.map(r=>r.id);
+    const data=[];
+    for(let k=0;k<ids.length;k+=20){   // par paquets : l'URL reste courte
+      const res=await fetch(SUPA_URL+'/rest/v1/resultats?id=in.('+ids.slice(k,k+20).join(',')+')&select=id,contenu,filename,ligne',{headers:{'Authorization':'Bearer '+SUPA_ANON,'apikey':SUPA_ANON}});
+      if(!res.ok) throw new Error('HTTP '+res.status);
+      data.push(...await res.json());
+    }
     for(let i=0;i<data.length;i++){
       await new Promise(r=>setTimeout(r,300));
-      triggerDownload(data[i].contenu,data[i].filename);
+      triggerDownload(withLigne(data[i].contenu,data[i].ligne),data[i].filename);
       document.getElementById('statusBar').textContent='Téléchargement '+(i+1)+'/'+data.length+'…';
     }
     document.getElementById('statusBar').textContent=data.length+' fichiers téléchargés';
   } catch(e){alert('Erreur : '+e.message);}
-  document.getElementById('btnDlAll').disabled=false;
+  document.getElementById('btnDlAll').disabled=filteredRows.length===0;
 }
 
 function triggerDownload(csvContent,filename) {
