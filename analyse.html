@@ -299,6 +299,13 @@ function initMap() {
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap contributors', maxZoom:19 }).addTo(map);
   heatmapMap = L.map('heatmap').setView([47.7485, -3.3673], 13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap contributors', maxZoom:19 }).addTo(heatmapMap);
+  // Cette carte est créée dans un panneau masqué : on recalcule sa taille dès que son conteneur change
+  // (affichage du panneau, redimensionnement de la fenêtre, rotation du téléphone).
+  if (window.ResizeObserver) {
+    new ResizeObserver(() => { heatmapMap.invalidateSize(); }).observe(document.getElementById('heatmap'));
+    new ResizeObserver(() => { map.invalidateSize(); }).observe(document.getElementById('map'));
+  }
+  window.addEventListener('resize', () => { map.invalidateSize(); heatmapMap.invalidateSize(); });
 }
 
 // ── Participants ──────────────────────────────────────────────────────────────
@@ -932,7 +939,9 @@ function renderComparaison() {
 // ── HEATMAP GPS ───────────────────────────────────────────────────────────────
 function renderHeatmap() {
   document.getElementById('panelHeatmap').style.display='';
+  heatmapMap.invalidateSize();           // le panneau vient d'être affiché : taille réelle à reprendre
   updateCluster();
+  setTimeout(() => { heatmapMap.invalidateSize(); if (heatCircles.length > 0) heatmapMap.fitBounds(L.featureGroup(heatCircles).getBounds(), {padding:[30,30]}); }, 150);
 }
 
 function updateCluster() {
@@ -990,6 +999,7 @@ function updateCluster() {
   });
 
   if(heatCircles.length > 0) {
+    heatmapMap.invalidateSize();
     const group = L.featureGroup(heatCircles);
     heatmapMap.fitBounds(group.getBounds(), {padding:[30,30]});
   }
