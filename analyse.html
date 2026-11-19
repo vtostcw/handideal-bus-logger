@@ -50,6 +50,18 @@
   .trace-chip .sw{width:18px;height:5px;border-radius:3px;}
   .trace-chip.off{opacity:.55;text-decoration:line-through;}
   .trace-chip .state{font-weight:600;}
+  /* Filtres à sélection multiple */
+  details.ms{position:relative;}
+  details.ms>summary{list-style:none;cursor:pointer;padding:8px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;font-size:13px;white-space:nowrap;color:var(--text);user-select:none;}
+  details.ms>summary::-webkit-details-marker{display:none;}
+  details.ms>summary::after{content:' \25BE';color:var(--muted);}
+  details.ms.active>summary{border-color:var(--accent);color:var(--accent);font-weight:600;}
+  details.ms[open]>summary{border-color:var(--accent);}
+  .ms-panel{position:absolute;z-index:1000;top:calc(100% + 4px);left:0;min-width:230px;max-width:80vw;max-height:300px;overflow:auto;background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:6px;box-shadow:0 8px 24px rgba(0,0,0,.25);}
+  .ms-panel label{display:flex;gap:8px;align-items:center;padding:7px 8px;border-radius:6px;font-size:13px;cursor:pointer;}
+  .ms-panel label:hover{background:var(--surface2);}
+  .ms-panel .ms-clear{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--border);border-radius:0;background:none;color:var(--accent);font:inherit;font-size:12px;font-weight:600;padding:6px 8px 8px;margin-bottom:4px;cursor:pointer;}
+  .ms-panel .ms-empty{padding:8px;color:var(--muted);font-size:12px;}
   .detail-panel{display:none;padding:16px 18px;border-top:1px solid var(--border);}
   .detail-panel.visible{display:block;}
   .detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;}
@@ -141,7 +153,8 @@
         <div class="legend-item"><div class="legend-dot" style="background:var(--c-accel)"></div> Accélération</div>
         <div class="legend-item"><div class="legend-dot" style="background:var(--c-brake)"></div> Freinage</div>
         <div class="legend-item"><div class="legend-dot" style="background:var(--c-turn)"></div> Virage</div>
-        <label class="legend-item" style="cursor:pointer;margin-left:8px;"><input type="checkbox" id="toggleTraces" checked onchange="renderTraces()"/> Afficher le tracé des lignes</label>
+        <label class="legend-item" style="cursor:pointer;margin-left:8px;"><input type="checkbox" id="toggleTraces" checked onchange="renderTraces()"/> Afficher les trajets enregistrés</label>
+        <label class="legend-item" id="fondLabel" style="cursor:pointer;" title="Parcours officiel de la ligne, affiché en fond pour voir quel segment a été emprunté"><input type="checkbox" id="toggleFond" checked onchange="renderFond()"/> <span id="fondText">Afficher le tracé complet de la ligne (fond)</span></label>
       </div>
     </div>
     <div id="traceBar" class="trace-bar" style="display:none;"></div>
@@ -156,22 +169,17 @@
   </div>
 
   <!-- Tableau signalements -->
-  <div class="panel">
+  <div class="panel" style="overflow:visible;">
     <div class="panel-header">
       <h2>Tableau des signalements</h2>
       <div style="display:flex;gap:8px;flex-wrap:wrap;">
-        <select id="filterType" onchange="filterSignalements()">
-          <option value="">Tous les types</option>
-          <option value="Accélération">Accélération</option>
-          <option value="Freinage">Freinage</option>
-          <option value="Virage">Virage</option>
-        </select>
-        <select id="filterLigne" onchange="onLigneChange()" aria-label="Ligne"><option value="">Toutes les lignes</option></select>
-        <select id="filterSession" onchange="filterSignalements()"><option value="">Toutes les sessions</option></select>
-        <select id="filterParticipant" onchange="filterSignalements()"><option value="">Tous les participants</option></select>
-        <select id="filterAffluence" onchange="filterSignalements()" aria-label="Affluence"><option value="">Toute affluence</option><option value="Faible">Affluence faible</option><option value="Moyenne">Affluence moyenne</option><option value="Forte">Affluence forte</option></select>
-        <select id="filterMeteo" onchange="filterSignalements()" aria-label="Météo"><option value="">Toute météo</option><option value="Soleil">Soleil</option><option value="Nuageux">Nuageux</option><option value="Pluvieux">Pluvieux</option><option value="Orageux">Orageux</option><option value="Neige">Neige</option><option value="Brouillard">Brouillard</option></select>
-        <select id="filterTrafic" onchange="filterSignalements()" aria-label="Trafic"><option value="">Tout trafic</option><option value="Faible">Trafic faible</option><option value="Moyen">Trafic moyen</option><option value="Fort">Trafic fort</option></select>
+        <details class="ms" id="filterType"><summary></summary><div class="ms-panel"></div></details>
+        <details class="ms" id="filterLigne"><summary></summary><div class="ms-panel"></div></details>
+        <details class="ms" id="filterSession"><summary></summary><div class="ms-panel"></div></details>
+        <details class="ms" id="filterParticipant"><summary></summary><div class="ms-panel"></div></details>
+        <details class="ms" id="filterAffluence"><summary></summary><div class="ms-panel"></div></details>
+        <details class="ms" id="filterMeteo"><summary></summary><div class="ms-panel"></div></details>
+        <details class="ms" id="filterTrafic"><summary></summary><div class="ms-panel"></div></details>
       </div>
     </div>
     <div id="tableContainer" class="table-wrap">
@@ -280,6 +288,43 @@ let participantColorMap = {}, sessionColorMap = {}, sessionCounter = 0;
 let allSignalements = [], allAcquisitions = [], allAcqSessions = [], filteredSignalements = [];
 let markers = [], heatCircles = [];
 
+// ── Filtres à sélection multiple (liste déroulante de cases à cocher) ─────────
+// Aucune case cochée = pas de restriction. Plusieurs cases = « l'une ou l'autre ».
+const MS = {};
+function msInit(id, allLabel, onChange, options) {
+  const el = document.getElementById(id);
+  MS[id] = { el, allLabel, onChange, options: [], checked: new Set() };
+  el.querySelector('.ms-panel').addEventListener('change', e => {
+    const v = e.target.getAttribute('data-v'); if (v === null) return;
+    if (e.target.checked) MS[id].checked.add(v); else MS[id].checked.delete(v);
+    msSummary(id); onChange();
+  });
+  el.querySelector('.ms-panel').addEventListener('click', e => {
+    if (e.target.classList.contains('ms-clear')) { MS[id].checked.clear(); msRender(id); onChange(); }
+  });
+  if (options) msSet(id, options); else msRender(id);
+}
+function msSet(id, options) {            // options : [{value,label}] ; les cases cochées encore valides sont conservées
+  const m = MS[id];
+  m.options = options;
+  m.checked = new Set([...m.checked].filter(v => options.some(o => o.value === v)));
+  msRender(id);
+}
+function msGet(id) { return MS[id] ? [...MS[id].checked] : []; }
+function msSummary(id) {
+  const m = MS[id], n = m.checked.size;
+  m.el.querySelector('summary').textContent = n === 0 ? m.allLabel : (n === 1 ? (m.options.find(o => o.value === [...m.checked][0]) || {label:'1 sélection'}).label : n + ' sélectionnés');
+  m.el.classList.toggle('active', n > 0);
+}
+function msRender(id) {
+  const m = MS[id], esc = t => String(t).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;');
+  m.el.querySelector('.ms-panel').innerHTML = (m.options.length === 0 ? '<div class="ms-empty">Aucune valeur disponible</div>' :
+    '<button type="button" class="ms-clear">Tout afficher (effacer la sélection)</button>' +
+    m.options.map(o => `<label><input type="checkbox" data-v="${esc(o.value)}" ${m.checked.has(o.value)?'checked':''}/> ${esc(o.label)}</label>`).join(''));
+  msSummary(id);
+}
+document.addEventListener('click', e => { document.querySelectorAll('details.ms[open]').forEach(d => { if (!d.contains(e.target)) d.removeAttribute('open'); }); });
+
 // ── Sessions ──────────────────────────────────────────────────────────────────
 function sessionLabel(participant, createdAt, ligne) {
   const base = participant + (ligne ? ' · ligne ' + ligne : '');
@@ -297,6 +342,7 @@ function getSessionColor(sessionId, participant) {
 function initMap() {
   map = L.map('map').setView([47.7485, -3.3673], 13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap contributors', maxZoom:19 }).addTo(map);
+  map.createPane('fondPane'); map.getPane('fondPane').style.zIndex = 350;   // sous les trajets enregistrés
   heatmapMap = L.map('heatmap').setView([47.7485, -3.3673], 13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OpenStreetMap contributors', maxZoom:19 }).addTo(heatmapMap);
   // Cette carte est créée dans un panneau masqué : on recalcule sa taille dès que son conteneur change
@@ -363,10 +409,8 @@ async function loadSelected() {
   }
 
   // Filtres
-  const sel = document.getElementById('filterParticipant');
-  sel.innerHTML = '<option value="">Tous les participants</option>' + list.map(p=>`<option value="${p}">${p}</option>`).join('');
-  const lignes = allLignes();
-  document.getElementById('filterLigne').innerHTML = '<option value="">Toutes les lignes</option>' + lignes.map(l=>`<option value="${l}">Ligne ${l}</option>`).join('');
+  msSet('filterParticipant', list.map(p => ({value:p, label:p})));
+  msSet('filterLigne', allLignes().map(l => ({value:l, label:'Ligne ' + l})));
   refreshSessionOptions();
 
   filterSignalements();
@@ -380,22 +424,24 @@ function allLignes() {
   return [...new Set([...allSignalements.map(s=>s.ligne), ...allAcqSessions.map(x=>x.ligne)].filter(Boolean))]
     .sort((a,b)=>a.localeCompare(b,'fr',{numeric:true}));
 }
-function selectedLigne() { const el = document.getElementById('filterLigne'); return el ? el.value : ''; }
+function selectedLignes() { return msGet('filterLigne'); }
+function ligneTexte() { const l = selectedLignes(); return l.length === 0 ? 'Toutes lignes' : (l.length === 1 ? 'Ligne ' + l[0] : 'Lignes ' + l.join(', ')); }
 // Périmètre « ligne » : appliqué aux seuils, à la comparaison et aux zones fréquentes
-function scopeEvt()  { const l = selectedLigne(); return l ? allSignalements.filter(s => s.ligne === l) : allSignalements; }
-function scopeAcq()  { const l = selectedLigne(); return l ? allAcquisitions.filter(s => s.ligne === l) : allAcquisitions; }
-function scopeSess() { const l = selectedLigne(); return l ? allAcqSessions.filter(s => s.ligne === l) : allAcqSessions; }
+function scopeEvt()  { const l = selectedLignes(); return l.length ? allSignalements.filter(s => l.includes(s.ligne)) : allSignalements; }
+function scopeAcq()  { const l = selectedLignes(); return l.length ? allAcquisitions.filter(s => l.includes(s.ligne)) : allAcquisitions; }
+function scopeSess() { const l = selectedLignes(); return l.length ? allAcqSessions.filter(s => l.includes(s.ligne)) : allAcqSessions; }
 
 // Liste des sessions : celles qui ont des signalements ou des acquisitions, restreintes à la ligne choisie
 function refreshSessionOptions() {
-  const l = selectedLigne(), el = document.getElementById('filterSession'), cur = el.value;
+  const l = selectedLignes(), parts = msGet('filterParticipant');
+  const okL = x => !l.length || l.includes(x.ligne), okP = x => !parts.length || parts.includes(x.participant);
   const map_ = new Map();
-  allSignalements.forEach(s => { if (!l || s.ligne === l) map_.set(s.sessionId, {participant:s.participant, label:s.sessionLabel}); });
-  allAcqSessions.forEach(x => { if ((!l || x.ligne === l) && !map_.has(x.sessionId)) map_.set(x.sessionId, {participant:x.participant, label:x.sessionLabel}); });
+  allSignalements.forEach(x => { if (okL(x) && okP(x)) map_.set(x.sessionId, {participant:x.participant, label:x.sessionLabel}); });
+  allAcqSessions.forEach(x => { if (okL(x) && okP(x) && !map_.has(x.sessionId)) map_.set(x.sessionId, {participant:x.participant, label:x.sessionLabel}); });
   const list = [...map_.entries()].sort((a,b) => a[1].participant.localeCompare(b[1].participant) || a[1].label.localeCompare(b[1].label));
-  el.innerHTML = '<option value="">Toutes les sessions</option>' + list.map(([id,v]) => `<option value="${id}">${v.label}</option>`).join('');
-  if (map_.has(cur)) el.value = cur;
+  msSet('filterSession', list.map(([id,v]) => ({value:id, label:v.label})));
 }
+function onFilterChange() { refreshSessionOptions(); filterSignalements(); }   // participant : la liste des sessions suit
 function onLigneChange() {
   refreshSessionOptions();
   filterSignalements();
@@ -484,16 +530,12 @@ function parseAcqCSV(csv, row) {
 
 // ── Filtrage ──────────────────────────────────────────────────────────────────
 function filterSignalements() {
-  const type=document.getElementById('filterType').value;
-  const part=document.getElementById('filterParticipant').value;
-  const ligne=document.getElementById('filterLigne').value;
-  const session=document.getElementById('filterSession').value;
-  const aff=document.getElementById('filterAffluence').value;
-  const met=document.getElementById('filterMeteo').value;
-  const tra=document.getElementById('filterTrafic').value;
+  const type=msGet('filterType'), part=msGet('filterParticipant'), ligne=msGet('filterLigne'), session=msGet('filterSession');
+  const aff=msGet('filterAffluence'), met=msGet('filterMeteo'), tra=msGet('filterTrafic');
+  const has = (arr, v) => !arr.length || arr.includes(v);
   filteredSignalements = allSignalements.filter(r =>
-    (!type||r.type===type)&&(!part||r.participant===part)&&(!ligne||r.ligne===ligne)&&(!session||r.sessionId===session)&&
-    (!aff||r.affluence===aff)&&(!met||r.meteo===met)&&(!tra||r.trafic===tra));
+    has(type,r.type)&&has(part,r.participant)&&has(ligne,r.ligne)&&has(session,r.sessionId)&&
+    has(aff,r.affluence)&&has(met,r.meteo)&&has(tra,r.trafic));
   renderMarkers(); renderTraces(); renderTable();
 }
 
@@ -531,14 +573,16 @@ function lineColor(l) {
 }
 // Sessions visibles = mêmes filtres que le tableau (participant, ligne, session, conditions)
 function sessionsForTraces() {
-  const part=document.getElementById('filterParticipant').value, ligne=selectedLigne(), session=document.getElementById('filterSession').value;
-  const aff=document.getElementById('filterAffluence').value, met=document.getElementById('filterMeteo').value, tra=document.getElementById('filterTrafic').value;
-  return allAcqSessions.filter(x => (!part||x.participant===part)&&(!ligne||x.ligne===ligne)&&(!session||x.sessionId===session)&&
-    (!aff||x.affluence===aff)&&(!met||x.meteo===met)&&(!tra||x.trafic===tra));
+  const part=msGet('filterParticipant'), ligne=msGet('filterLigne'), session=msGet('filterSession');
+  const aff=msGet('filterAffluence'), met=msGet('filterMeteo'), tra=msGet('filterTrafic');
+  const has = (arr, v) => !arr.length || arr.includes(v);
+  return allAcqSessions.filter(x => has(part,x.participant)&&has(ligne,x.ligne)&&has(session,x.sessionId)&&
+    has(aff,x.affluence)&&has(met,x.meteo)&&has(tra,x.trafic));
 }
 function toggleTraceLine(l) { if (traceHidden.has(l)) traceHidden.delete(l); else traceHidden.add(l); renderTraces(); }
 function renderTraces() {
   if (!map) return;
+  renderFond();
   if (traceLayer) { map.removeLayer(traceLayer); traceLayer = null; }
   const bar = document.getElementById('traceBar');
   const on = document.getElementById('toggleTraces').checked;
@@ -570,6 +614,45 @@ function renderTraces() {
   });
   // Sans signalement géolocalisé à afficher, on cadre la carte sur les tracés
   if (pts.length > 1 && markers.filter(Boolean).length === 0) map.fitBounds(pts, { padding: [40, 40] });
+}
+
+// ── Tracé complet des lignes (parcours officiel, fichier lignes.geojson) ───────
+// Le fichier est produit à partir du GTFS du réseau IZILO (voir gtfs_vers_geojson.py).
+let lignesGeo = null, fondLayer = null;
+function normLigne(l) { return String(l == null ? '' : l).trim().toLowerCase().replace(/\s+/g, ''); }
+async function loadLignesGeo() {
+  const txt = document.getElementById('fondText'), cb = document.getElementById('toggleFond');
+  try {
+    const r = await fetch('lignes.geojson', { cache: 'no-cache' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    lignesGeo = await r.json();
+    if (!lignesGeo.features || lignesGeo.features.length === 0) throw new Error('vide');
+  } catch (e) {
+    lignesGeo = null; cb.checked = false; cb.disabled = true;
+    txt.textContent = 'Tracé complet de la ligne : fichier lignes.geojson non fourni';
+    document.getElementById('fondLabel').style.opacity = '0.6';
+  }
+  renderFond();
+}
+// Lignes à dessiner : celles choisies dans le filtre, sinon celles des sessions affichées
+function renderFond() {
+  if (!map) return;
+  if (fondLayer) { map.removeLayer(fondLayer); fondLayer = null; }
+  if (!lignesGeo || !document.getElementById('toggleFond').checked) return;
+  const wanted = new Map();                       // ligne normalisée -> libellé tel que saisi
+  const base = selectedLignes().length ? selectedLignes() : sessionsForTraces().map(x => x.ligne).filter(Boolean);
+  base.forEach(l => wanted.set(normLigne(l), l));
+  traceHidden.forEach(l => wanted.delete(normLigne(l)));   // une ligne masquée l'est aussi en fond
+  if (wanted.size === 0) return;
+  fondLayer = L.featureGroup().addTo(map);
+  lignesGeo.features.forEach(f => {
+    const key = normLigne(f.properties && f.properties.ligne);
+    if (!wanted.has(key)) return;
+    const nom = wanted.get(key);
+    L.geoJSON(f, { pane: 'fondPane', style: { color: lineColor(nom), weight: 10, opacity: 0.3, lineCap: 'round', lineJoin: 'round' } })
+      .bindTooltip('Ligne ' + nom + (f.properties.nom ? ' · ' + f.properties.nom : '') + ' (parcours officiel)', { sticky: true })
+      .addTo(fondLayer);
+  });
 }
 
 // ── Détail au clic ────────────────────────────────────────────────────────────
@@ -642,9 +725,9 @@ function empThreshold(stAcq, stEvt) {
 function renderAnalyseSeuils() {
   if(allSignalements.length===0) return;
   document.getElementById('panelSeuils').style.display='';
-  const evtS = scopeEvt(), acqS = scopeAcq(), ligneSel = selectedLigne();
+  const evtS = scopeEvt(), acqS = scopeAcq();
   if(evtS.length===0) {
-    document.getElementById('seuilsGrid').innerHTML = '<div class="empty" style="grid-column:1/-1;">Aucun signalement sur la ligne ' + ligneSel + '.</div>';
+    document.getElementById('seuilsGrid').innerHTML = '<div class="empty" style="grid-column:1/-1;">Aucun signalement pour la sélection : ' + ligneTexte() + '.</div>';
     document.getElementById('seuilsInfo').textContent = '';
     if(distChart) { distChart.destroy(); distChart = null; }
     renderComparaison();
@@ -689,7 +772,7 @@ function renderAnalyseSeuils() {
   const empVirage = stVirage.mean > 0 ? Math.max(stAcq.mean, stVirage.mean - stAcq.std) : null;
 
   document.getElementById('seuilsInfo').textContent =
-    (ligneSel ? 'Ligne ' + ligneSel + ' · ' : 'Toutes lignes · ') + stAcq.n + ' acquisitions · ' + evtNorms.length + ' signalements avec données';
+    ligneTexte() + ' · ' + stAcq.n + ' acquisitions · ' + evtNorms.length + ' signalements avec données';
 
   // Niveau ISO de la moyenne signalements
   function isoLevel(val) {
@@ -1039,7 +1122,15 @@ function distanceM(lat1, lon1, lat2, lon2) {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+msInit('filterType', 'Tous les types', filterSignalements, [{value:'Accélération',label:'Accélération'},{value:'Freinage',label:'Freinage'},{value:'Virage',label:'Virage'}]);
+msInit('filterLigne', 'Toutes les lignes', onLigneChange);
+msInit('filterSession', 'Toutes les sessions', filterSignalements);
+msInit('filterParticipant', 'Tous les participants', onFilterChange);
+msInit('filterAffluence', 'Toute affluence', filterSignalements, [{value:'Faible',label:'Affluence faible'},{value:'Moyenne',label:'Affluence moyenne'},{value:'Forte',label:'Affluence forte'}]);
+msInit('filterMeteo', 'Toute météo', filterSignalements, ['Soleil','Nuageux','Pluvieux','Orageux','Neige','Brouillard'].map(v => ({value:v,label:v})));
+msInit('filterTrafic', 'Tout trafic', filterSignalements, [{value:'Faible',label:'Trafic faible'},{value:'Moyen',label:'Trafic moyen'},{value:'Fort',label:'Trafic fort'}]);
 initMap();
+loadLignesGeo();
 loadParticipants();
 </script>
 </body>
